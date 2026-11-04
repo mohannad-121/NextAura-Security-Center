@@ -53,3 +53,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# agent binaries are built per deployment, never committed
+agent/dist/*
+!agent/dist/.gitkeep

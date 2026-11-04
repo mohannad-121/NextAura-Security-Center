@@ -1,0 +1,211 @@
+// nextaura-agent — read-only endpoint assessment agent for NextAura Security Center.
+//
+//	nextaura-agent enroll  --server https://... --code XXXXX-XXXXX-XXXXX
+//	nextaura-agent run                 (foreground service loop)
+//	nextaura-agent assess [--collectors A,B]  (one-off assessment, uploads)
+//	nextaura-agent collect [--collectors A,B] (print results locally, no upload)
+//	nextaura-agent status
+//	nextaura-agent unenroll
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"runtime"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/nextaura/agent/internal/client"
+	"github.com/nextaura/agent/internal/collectors"
+	"github.com/nextaura/agent/internal/config"
+	"github.com/nextaura/agent/internal/logging"
+	"github.com/nextaura/agent/internal/model"
+	"github.com/nextaura/agent/internal/scheduler"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		usage()
+		os.Exit(2)
+	}
+	dir := config.DefaultDir()
+	var err error
+	switch os.Args[1] {
+	case "enroll":
+		err = cmdEnroll(dir, os.Args[2:])
+	case "run":
+		err = cmdRun(dir)
+	case "assess":
+		err = cmdAssess(dir, os.Args[2:], true)
+	case "collect":
+		err = cmdAssess(dir, os.Args[2:], false)
+	case "status":
+		err = cmdStatus(dir)
+	case "unenroll":
+		err = config.Remove(dir)
+		if err == nil {
+			fmt.Println("Local enrollment removed. Revoke the device in the dashboard to invalidate the server-side token.")
+		}
+	case "version", "--version", "-v":
+		fmt.Printf("nextaura-agent %s (%s/%s)\n", config.Version, runtime.GOOS, runtime.GOARCH)
+	default:
+		usage()
+		os.Exit(2)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
+
+func usage() {
+	fmt.Fprintln(os.Stderr, `nextaura-agent `+config.Version+`
+Commands:
+  enroll   --server <https url> --code <enrollment code>
+  run      run the service loop in the foreground
+  assess   run collectors now and upload (--collectors A,B)
+  collect  run collectors and print JSON locally without uploading
+  status   show enrollment status (token redacted)
+  unenroll delete the local token
+  version`)
+}
+
+func osType() (string, error) {
+	switch runtime.GOOS {
+	case "windows":
+		return "WINDOWS", nil
+	case "darwin":
+		return "MACOS", nil
+	}
+	return "", fmt.Errorf("unsupported operating system %s (see docs/SUPPORTED_PLATFORMS.md)", runtime.GOOS)
+}
+
+func cmdEnroll(dir string, args []string) error {
+	fs := flag.NewFlagSet("enroll", flag.ExitOnError)
+	server := fs.String("server", "", "server URL, e.g. https://security.example.com")
+	code := fs.String("code", "", "enrollment code from the dashboard")
+	fs.Parse(args)
+	if *server == "" || *code == "" {
+		return errors.New("--server and --code are required")
+	}
+	ost, err := osType()
+	if err != nil {
+		return err
+	}
+	srv, err := client.ValidateServerURL(*server)
+	if err != nil {
+		return err
+	}
+	if _, err := config.Load(dir); err == nil {
+		return errors.New("already enrolled; run `nextaura-agent unenroll` first")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	fmt.Println("Collecting system identification…")
+	res, err := collectors.Run(ctx, []string{model.CollectorSystemInfo}, 2*time.Minute)
+	if err != nil || len(res) == 0 || res[0].System == nil {
+		return fmt.Errorf("could not collect system information: %v", err)
+	}
+	c := client.New(srv, "")
+	fmt.Println("Enrolling with", srv, "…")
+	resp, err := c.Enroll(ctx, model.EnrollRequest{Code: strings.TrimSpace(*code), AgentVersion: config.Version, OSType: ost, System: *res[0].System})
+	if err != nil {
+		return fmt.Errorf("enrollment failed: %w", err)
+	}
+	st := &config.State{ServerURL: srv, DeviceID: resp.DeviceID, DeviceToken: resp.DeviceToken, TokenExpiresAt: resp.TokenExpiresAt, OrganizationName: resp.OrganizationName, EnrolledAt: time.Now().UTC(),
+		HeartbeatIntervalMinutes: resp.Config.HeartbeatIntervalMinutes, PostureIntervalHours: resp.Config.PostureIntervalHours, InventoryIntervalHours: resp.Config.InventoryIntervalHours}
+	if err := config.Save(dir, st); err != nil {
+		return fmt.Errorf("save state to %s: %w", dir, err)
+	}
+	fmt.Printf("Enrolled as device %s in organization %q. State saved to %s\n", resp.DeviceID, resp.OrganizationName, dir)
+	fmt.Println("Running initial assessment…")
+	r := scheduler.New(dir, st)
+	if _, err := r.RunAssessment(ctx, "ENROLLMENT", model.AllCollectors, nil); err != nil {
+		return fmt.Errorf("initial assessment failed (the device is enrolled; the service will retry): %w", err)
+	}
+	st.LastPostureAt = time.Now()
+	st.LastInventoryAt = time.Now()
+	_ = config.Save(dir, st)
+	fmt.Println("Initial assessment uploaded. Install the service to keep reporting (see docs/AGENT_INSTALLATION.md).")
+	return nil
+}
+
+func cmdRun(dir string) error {
+	logging.SetupFile(dir)
+	st, err := config.Load(dir)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	logging.Infof("nextaura-agent %s starting (device %s, server %s)", config.Version, st.DeviceID, st.ServerURL)
+	err = scheduler.New(dir, st).Loop(ctx)
+	logging.Infof("nextaura-agent stopped")
+	return err
+}
+
+func parseCollectors(s string) ([]string, error) {
+	if s == "" {
+		return model.AllCollectors, nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.ToUpper(strings.TrimSpace(p))
+		if !model.IsKnownCollector(p) {
+			return nil, fmt.Errorf("unknown collector %q; valid: %s", p, strings.Join(model.AllCollectors, ","))
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func cmdAssess(dir string, args []string, upload bool) error {
+	fs := flag.NewFlagSet("assess", flag.ExitOnError)
+	cols := fs.String("collectors", "", "comma-separated collector IDs (default all)")
+	fs.Parse(args)
+	ids, err := parseCollectors(*cols)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	if !upload {
+		res, err := collectors.Run(ctx, ids, 3*time.Minute)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(res)
+	}
+	st, err := config.Load(dir)
+	if err != nil {
+		return err
+	}
+	resp, err := scheduler.New(dir, st).RunAssessment(ctx, "MANUAL", ids, nil)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Assessment %s uploaded (coverage %d%%)\n", resp.AssessmentID, resp.CoveragePercent)
+	return nil
+}
+
+func cmdStatus(dir string) error {
+	st, err := config.Load(dir)
+	if errors.Is(err, config.ErrNotEnrolled) {
+		fmt.Println("Not enrolled. State directory:", dir)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(st.Redacted())
+}

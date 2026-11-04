@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "NextAura Security Center"
+description = "A defensive, read-only endpoint security assessment dashboard for SMB administrators. Enroll authorized Windows/macOS devices with single-use codes, monitor posture from authenticated agent heartbeats and assessments, manage findings, review CVE matches, and export reports."
+version = "1.0.0"
+id = "artifacts/security-center"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25265
+
+[services.development]
+run = "pnpm --filter @workspace/security-center run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/security-center", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/security-center/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25265"
+BASE_PATH = "/"

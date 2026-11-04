@@ -1,0 +1,2 @@
+- [Agent contract sync](agent-contract.md) — agent API is hand-written Zod + Go structs, not OpenAPI; change both sides together and keep UNKNOWN≠PASS invariant.
+- [API server bundling quirks](api-bundle-quirks.md) — pdfkit needs @swc/helpers as a direct dep; one-off DB scripts need esbuild with createRequire banner.

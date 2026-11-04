@@ -3,20 +3,29 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: NextAura Security Center dashboard API (browser-facing, Clerk session authenticated). Agent endpoints live under /api/agent/v1 and are documented in docs/ARCHITECTURE.md.
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: me
+  - name: dashboard
+  - name: devices
+  - name: findings
+  - name: vulnerabilities
+  - name: enrollments
+  - name: reports
+  - name: settings
+  - name: audit
+  - name: email-security
+  - name: rules
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +33,1322 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /me:
+    get:
+      operationId: getMe
+      tags: [me]
+      summary: Current signed-in administrator, their organizations and active organization
+      responses:
+        "200":
+          description: Current user context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+  /me/organization:
+    put:
+      operationId: selectOrganization
+      tags: [me]
+      summary: Switch the active organization (must be a member)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationSelection"
+      responses:
+        "200":
+          description: Updated context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+  /organizations:
+    post:
+      operationId: createOrganization
+      tags: [me]
+      summary: Create a new organization; the caller becomes OWNER
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Fleet totals, findings by severity, vulnerability overview
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /dashboard/activity:
+    get:
+      operationId: getDashboardActivity
+      tags: [dashboard]
+      summary: Recent agent activity (heartbeats, assessments, enrollments)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      responses:
+        "200":
+          description: Activity feed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEvent"
+
+  /devices:
+    get:
+      operationId: listDevices
+      tags: [devices]
+      summary: Device fleet with filters
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: osType
+          in: query
+          schema: { $ref: "#/components/schemas/OsType" }
+        - name: riskLevel
+          in: query
+          schema: { $ref: "#/components/schemas/RiskLevel" }
+        - name: online
+          in: query
+          schema: { type: boolean }
+        - name: lastAssessmentAfter
+          in: query
+          schema: { type: string, format: date-time }
+        - name: includeRevoked
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+  /devices/{id}:
+    get:
+      operationId: getDevice
+      tags: [devices]
+      summary: Device detail with posture, hardware, agent health
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Device detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /devices/{id}/checks:
+    get:
+      operationId: listDeviceChecks
+      tags: [devices]
+      summary: Latest security checks for the device (from the most recent assessment per collector)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Checks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SecurityCheck"
+  /devices/{id}/software:
+    get:
+      operationId: listDeviceSoftware
+      tags: [devices]
+      summary: Software inventory
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Software
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SoftwareItem"
+  /devices/{id}/startup:
+    get:
+      operationId: listDeviceStartupItems
+      tags: [devices]
+      summary: Startup persistence inventory
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Startup items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StartupItem"
+  /devices/{id}/threats:
+    get:
+      operationId: listDeviceThreats
+      tags: [devices]
+      summary: Antivirus detection history reported by the installed AV product
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Threat history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ThreatDetection"
+  /devices/{id}/assessments:
+    get:
+      operationId: listDeviceAssessments
+      tags: [devices]
+      summary: Assessment history
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Assessments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Assessment"
+  /devices/{id}/assessment-requests:
+    get:
+      operationId: listDeviceAssessmentRequests
+      tags: [devices]
+      summary: Pending and recent collector requests for the device
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentRequest"
+    post:
+      operationId: requestDeviceAssessment
+      tags: [devices]
+      summary: Ask the agent to run one or more predefined read-only collectors
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssessmentRequestInput"
+      responses:
+        "201":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRequest"
+  /devices/{id}/revoke:
+    post:
+      operationId: revokeDevice
+      tags: [devices]
+      summary: Revoke the device credential; it can no longer submit data
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+
+  /findings:
+    get:
+      operationId: listFindings
+      tags: [findings]
+      summary: Findings with filters
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: severity
+          in: query
+          schema: { $ref: "#/components/schemas/Severity" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/FindingStatus" }
+        - name: deviceId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Findings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Finding"
+  /findings/{id}:
+    get:
+      operationId: getFinding
+      tags: [findings]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Finding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Finding"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateFinding
+      tags: [findings]
+      summary: Change finding status (dashboard only; never touches the endpoint)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FindingUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Finding"
+
+  /vulnerabilities:
+    get:
+      operationId: listVulnerabilities
+      tags: [vulnerabilities]
+      summary: CVE matches across the fleet
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: severity
+          in: query
+          schema: { $ref: "#/components/schemas/Severity" }
+        - name: kevOnly
+          in: query
+          schema: { type: boolean }
+        - name: deviceId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: matchConfidence
+          in: query
+          schema: { $ref: "#/components/schemas/MatchConfidence" }
+      responses:
+        "200":
+          description: Matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VulnerabilityMatch"
+  /vulnerabilities/intelligence:
+    get:
+      operationId: getVulnerabilityIntelligenceStatus
+      tags: [vulnerabilities]
+      summary: Status of the NVD / CISA KEV feeds (last sync, cached entries, errors)
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntelligenceStatus"
+    post:
+      operationId: refreshVulnerabilityIntelligence
+      tags: [vulnerabilities]
+      summary: Trigger a rate-limited re-sync of KEV and a re-match of inventory against cached NVD data
+      responses:
+        "202":
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntelligenceStatus"
+
+  /enrollments:
+    get:
+      operationId: listEnrollments
+      tags: [enrollments]
+      summary: Enrollment requests for the organization
+      responses:
+        "200":
+          description: Enrollments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnrollmentRequest"
+    post:
+      operationId: createEnrollment
+      tags: [enrollments]
+      summary: Generate a short-lived, single-use enrollment code (returned once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnrollmentInput"
+      responses:
+        "201":
+          description: Created; code is only present in this response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentCreated"
+  /enrollments/{id}:
+    get:
+      operationId: getEnrollment
+      tags: [enrollments]
+      summary: Poll an enrollment request (status flips to CONSUMED when the device enrolls)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Enrollment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: cancelEnrollment
+      tags: [enrollments]
+      summary: Cancel an unused enrollment code
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Cancelled
+  /agent-builds:
+    get:
+      operationId: listAgentBuilds
+      tags: [enrollments]
+      summary: Agent binaries that exist on this server, with checksums and verification state
+      responses:
+        "200":
+          description: Builds
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentBuild"
+
+  /reports:
+    get:
+      operationId: listReports
+      tags: [reports]
+      responses:
+        "200":
+          description: Report exports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReportExport"
+    post:
+      operationId: createReport
+      tags: [reports]
+      summary: Generate a report from persisted assessment data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportExportInput"
+      responses:
+        "201":
+          description: Generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportExport"
+
+  /settings/organization:
+    get:
+      operationId: getOrganizationSettings
+      tags: [settings]
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationSettings"
+    patch:
+      operationId: updateOrganizationSettings
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationSettingsUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationSettings"
+  /settings/members:
+    get:
+      operationId: listMembers
+      tags: [settings]
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Member"
+    post:
+      operationId: addMember
+      tags: [settings]
+      summary: Authorize a team member by email (they sign in with that email)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberInput"
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+  /settings/members/{id}:
+    patch:
+      operationId: updateMember
+      tags: [settings]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+    delete:
+      operationId: removeMember
+      tags: [settings]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Removed
+  /settings/data-deletion:
+    post:
+      operationId: requestDataDeletion
+      tags: [settings]
+      summary: Delete all telemetry for the organization (OWNER only; requires confirmation phrase)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataDeletionInput"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataDeletionResult"
+
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [audit]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+
+  /email-security:
+    get:
+      operationId: listEmailDomainAudits
+      tags: [email-security]
+      responses:
+        "200":
+          description: Audits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmailDomainAudit"
+    post:
+      operationId: runEmailDomainAudit
+      tags: [email-security]
+      summary: Run a DNS-based SPF/DMARC/DKIM configuration audit for a domain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailDomainAuditInput"
+      responses:
+        "201":
+          description: Audit result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailDomainAudit"
+
+  /rules:
+    get:
+      operationId: listRules
+      tags: [rules]
+      summary: Catalog of deterministic assessment rules compiled into the server
+      responses:
+        "200":
+          description: Rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuleDefinition"
+
 components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
+        status: { type: string }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    OsType:
+      type: string
+      enum: [WINDOWS, MACOS]
+    Architecture:
+      type: string
+      enum: [amd64, arm64, unknown]
+    Role:
+      type: string
+      enum: [OWNER, ADMIN, SECURITY_ANALYST, VIEWER]
+    Severity:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW, INFO]
+    RiskLevel:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN]
+    CheckStatus:
+      type: string
+      enum: [PASS, FAIL, WARNING, UNKNOWN, UNSUPPORTED, PERMISSION_DENIED, STALE]
+    Confidence:
+      type: string
+      enum: [HIGH, MEDIUM, LOW]
+    FindingStatus:
+      type: string
+      enum: [OPEN, ACKNOWLEDGED, RESOLVED, FALSE_POSITIVE]
+    MatchConfidence:
+      type: string
+      enum: [CONFIRMED, PROBABLE, POSSIBLE, UNKNOWN]
+    CollectorId:
+      type: string
+      description: Fixed, audited collector identifiers compiled into the agent. No other values are accepted anywhere.
+      enum: [SYSTEM_INFO, SECURITY_POSTURE, ANTIVIRUS_STATUS, SOFTWARE_INVENTORY, STARTUP_INVENTORY, SAFE_NETWORK_SUMMARY]
+    CoverageStatus:
+      type: string
+      description: FULL = all collectors succeeded recently; PARTIAL = some collectors unavailable; STALE = last assessment older than policy; NONE = never assessed
+      enum: [FULL, PARTIAL, STALE, NONE]
+    AgentReliability:
+      type: string
+      enum: [HEALTHY, DEGRADED, OFFLINE, REVOKED, NEVER_REPORTED]
+    DeviceStatus:
+      type: string
+      enum: [ACTIVE, REVOKED]
+
+    OrganizationSummary:
+      type: object
+      required: [id, name, slug, role]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+    Me:
+      type: object
+      required: [userId, email, name, organizations, currentOrganization, demoMode]
+      properties:
+        userId: { type: string }
+        email: { type: string }
+        name: { type: string }
+        organizations:
+          type: array
+          items: { $ref: "#/components/schemas/OrganizationSummary" }
+        currentOrganization:
+          oneOf:
+            - $ref: "#/components/schemas/OrganizationSummary"
+            - type: "null"
+        demoMode:
+          type: boolean
+          description: True when the active organization is the clearly-labelled demonstration organization whose records are not from real endpoints.
+    OrganizationSelection:
+      type: object
+      required: [organizationId]
+      properties:
+        organizationId: { type: string, format: uuid }
+    OrganizationInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+
+    SeverityCounts:
+      type: object
+      required: [CRITICAL, HIGH, MEDIUM, LOW, INFO]
+      properties:
+        CRITICAL: { type: integer }
+        HIGH: { type: integer }
+        MEDIUM: { type: integer }
+        LOW: { type: integer }
+        INFO: { type: integer }
+    DashboardSummary:
+      type: object
+      required: [generatedAt, totalDevices, onlineDevices, offlineDevices, devicesRequiringAttention, neverAssessedDevices, openFindingsBySeverity, latestAssessments, vulnerabilities, agentReliability, onlineThresholdMinutes]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        onlineThresholdMinutes:
+          type: integer
+          description: A device is online when its last authenticated heartbeat is within this many minutes.
+        totalDevices: { type: integer }
+        onlineDevices: { type: integer }
+        offlineDevices: { type: integer }
+        devicesRequiringAttention: { type: integer }
+        neverAssessedDevices: { type: integer }
+        openFindingsBySeverity: { $ref: "#/components/schemas/SeverityCounts" }
+        latestAssessments:
+          type: array
+          items: { $ref: "#/components/schemas/Assessment" }
+        vulnerabilities:
+          type: object
+          required: [total, knownExploited, confirmed, probable, possible, affectedDevices]
+          properties:
+            total: { type: integer }
+            knownExploited: { type: integer }
+            confirmed: { type: integer }
+            probable: { type: integer }
+            possible: { type: integer }
+            affectedDevices: { type: integer }
+        agentReliability:
+          type: object
+          required: [HEALTHY, DEGRADED, OFFLINE, REVOKED, NEVER_REPORTED]
+          properties:
+            HEALTHY: { type: integer }
+            DEGRADED: { type: integer }
+            OFFLINE: { type: integer }
+            REVOKED: { type: integer }
+            NEVER_REPORTED: { type: integer }
+    ActivityEvent:
+      type: object
+      required: [id, type, occurredAt, deviceId, deviceName, summary]
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [HEARTBEAT, ASSESSMENT, ENROLLMENT, REQUEST, REVOCATION]
+        occurredAt: { type: string, format: date-time }
+        deviceId: { type: ["string", "null"], format: uuid }
+        deviceName: { type: ["string", "null"] }
+        summary: { type: string }
+
+    Device:
+      type: object
+      required: [id, name, osType, osVersion, osBuild, architecture, agentVersion, status, isOnline, lastSeenAt, lastAssessmentAt, enrolledAt, coverageStatus, coveragePercent, riskLevel, riskScore, agentReliability, openFindings]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, description: Hostname reported by the agent }
+        osType: { $ref: "#/components/schemas/OsType" }
+        osVersion: { type: string }
+        osBuild: { type: ["string", "null"] }
+        architecture: { $ref: "#/components/schemas/Architecture" }
+        agentVersion: { type: string }
+        status: { $ref: "#/components/schemas/DeviceStatus" }
+        isOnline: { type: boolean, description: Derived from authenticated heartbeats only }
+        lastSeenAt: { type: ["string", "null"], format: date-time }
+        lastAssessmentAt: { type: ["string", "null"], format: date-time }
+        enrolledAt: { type: string, format: date-time }
+        coverageStatus: { $ref: "#/components/schemas/CoverageStatus" }
+        coveragePercent: { type: integer, description: Percentage of checks that returned PASS/FAIL/WARNING rather than UNKNOWN/UNSUPPORTED/PERMISSION_DENIED }
+        riskLevel: { $ref: "#/components/schemas/RiskLevel" }
+        riskScore: { type: ["integer", "null"], description: 0-100 deterministic score; null when never assessed. A low score is not proof of a clean device. }
+        agentReliability: { $ref: "#/components/schemas/AgentReliability" }
+        openFindings: { $ref: "#/components/schemas/SeverityCounts" }
+    DeviceDetail:
+      allOf:
+        - $ref: "#/components/schemas/Device"
+        - type: object
+          required: [hardware, operatingSystem, antivirus, agentHealth, latestAssessment, unknownCheckCount, failedCheckCount]
+          properties:
+            hardware:
+              type: object
+              required: [cpuModel, totalRamMb, model, serialRedacted]
+              properties:
+                cpuModel: { type: ["string", "null"] }
+                totalRamMb: { type: ["integer", "null"] }
+                model: { type: ["string", "null"] }
+                serialRedacted: { type: ["string", "null"], description: Last 4 characters only }
+            operatingSystem:
+              type: object
+              required: [name, version, build, architecture, supportStatus, supportEvidence]
+              properties:
+                name: { type: string }
+                version: { type: string }
+                build: { type: ["string", "null"] }
+                architecture: { $ref: "#/components/schemas/Architecture" }
+                supportStatus: { $ref: "#/components/schemas/CheckStatus" }
+                supportEvidence: { type: string }
+            antivirus:
+              type: object
+              required: [product, status, realTimeProtection, definitionsAgeDays, lastDefinitionUpdate, source, note]
+              properties:
+                product: { type: ["string", "null"] }
+                status:
+                  type: string
+                  enum: [ACTIVE, DISABLED, PASSIVE, THIRD_PARTY, UNKNOWN, UNSUPPORTED, PERMISSION_DENIED]
+                realTimeProtection: { $ref: "#/components/schemas/CheckStatus" }
+                definitionsAgeDays: { type: ["integer", "null"] }
+                lastDefinitionUpdate: { type: ["string", "null"], format: date-time }
+                source: { type: ["string", "null"] }
+                note: { type: string, description: Truthful caveat, e.g. that absence of detections is not proof the device is clean }
+            agentHealth:
+              type: object
+              required: [reliability, lastHeartbeatAt, heartbeatIntervalMinutes, consecutiveMissedHeartbeats, lastCollectorErrors, agentVersion, supportedVersion]
+              properties:
+                reliability: { $ref: "#/components/schemas/AgentReliability" }
+                lastHeartbeatAt: { type: ["string", "null"], format: date-time }
+                heartbeatIntervalMinutes: { type: integer }
+                consecutiveMissedHeartbeats: { type: integer }
+                lastCollectorErrors:
+                  type: array
+                  items:
+                    type: object
+                    required: [collectorId, message, occurredAt]
+                    properties:
+                      collectorId: { $ref: "#/components/schemas/CollectorId" }
+                      message: { type: string }
+                      occurredAt: { type: string, format: date-time }
+                agentVersion: { type: string }
+                supportedVersion: { type: boolean }
+            latestAssessment:
+              oneOf:
+                - $ref: "#/components/schemas/Assessment"
+                - type: "null"
+            unknownCheckCount: { type: integer }
+            failedCheckCount: { type: integer }
+    SecurityCheck:
+      type: object
+      required: [id, assessmentId, collectorId, checkId, category, title, status, evidence, collectedAt, dataSource, confidence, requiredPermissions, unavailableReason, collectorVersion]
+      properties:
+        id: { type: string, format: uuid }
+        assessmentId: { type: string, format: uuid }
+        collectorId: { $ref: "#/components/schemas/CollectorId" }
+        checkId: { type: string, description: Stable identifier e.g. WIN_DEFENDER_REALTIME }
+        category:
+          type: string
+          enum: [SECURITY_POSTURE, ANTIVIRUS, ENCRYPTION, FIREWALL, UPDATES, OS_SUPPORT, NETWORK, SYSTEM]
+        title: { type: string }
+        status: { $ref: "#/components/schemas/CheckStatus" }
+        evidence: { type: string }
+        collectedAt: { type: string, format: date-time }
+        dataSource: { type: string, description: e.g. Get-MpComputerStatus, fdesetup status, osquery }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        requiredPermissions: { type: string }
+        unavailableReason: { type: ["string", "null"] }
+        collectorVersion: { type: string }
+    SoftwareItem:
+      type: object
+      required: [id, name, vendor, version, installedAt, source, collectedAt, vulnerabilityCount]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        vendor: { type: ["string", "null"] }
+        version: { type: ["string", "null"] }
+        installedAt: { type: ["string", "null"], format: date-time }
+        source: { type: string }
+        collectedAt: { type: string, format: date-time }
+        vulnerabilityCount: { type: integer }
+    StartupItem:
+      type: object
+      required: [id, name, location, kind, enabled, publisher, collectedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        location: { type: string, description: Registry key / LaunchAgents path with user directory redacted }
+        kind:
+          type: string
+          enum: [REGISTRY_RUN, STARTUP_FOLDER, SCHEDULED_TASK, SERVICE, LAUNCH_AGENT, LAUNCH_DAEMON, LOGIN_ITEM, OTHER]
+        enabled: { type: ["boolean", "null"] }
+        publisher: { type: ["string", "null"] }
+        collectedAt: { type: string, format: date-time }
+    ThreatDetection:
+      type: object
+      required: [id, threatName, severity, detectedAt, actionTaken, product, source, collectedAt]
+      properties:
+        id: { type: string, format: uuid }
+        threatName: { type: string }
+        severity: { type: ["string", "null"] }
+        detectedAt: { type: ["string", "null"], format: date-time }
+        actionTaken: { type: ["string", "null"] }
+        product: { type: string }
+        source: { type: string }
+        collectedAt: { type: string, format: date-time }
+    Assessment:
+      type: object
+      required: [id, deviceId, deviceName, trigger, status, startedAt, completedAt, receivedAt, collectorsRequested, collectorsSucceeded, collectorsFailed, riskScore, coveragePercent, checkCounts, agentVersion]
+      properties:
+        id: { type: string, format: uuid }
+        deviceId: { type: string, format: uuid }
+        deviceName: { type: string }
+        trigger:
+          type: string
+          enum: [ENROLLMENT, SCHEDULED, MANUAL]
         status:
           type: string
-      required:
-        - status
+          enum: [COMPLETE, PARTIAL, FAILED]
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        receivedAt: { type: string, format: date-time }
+        collectorsRequested:
+          type: array
+          items: { $ref: "#/components/schemas/CollectorId" }
+        collectorsSucceeded:
+          type: array
+          items: { $ref: "#/components/schemas/CollectorId" }
+        collectorsFailed:
+          type: array
+          items: { $ref: "#/components/schemas/CollectorId" }
+        riskScore: { type: ["integer", "null"] }
+        coveragePercent: { type: integer }
+        checkCounts:
+          type: object
+          required: [PASS, FAIL, WARNING, UNKNOWN, UNSUPPORTED, PERMISSION_DENIED, STALE]
+          properties:
+            PASS: { type: integer }
+            FAIL: { type: integer }
+            WARNING: { type: integer }
+            UNKNOWN: { type: integer }
+            UNSUPPORTED: { type: integer }
+            PERMISSION_DENIED: { type: integer }
+            STALE: { type: integer }
+        agentVersion: { type: string }
+    AgentRequest:
+      type: object
+      required: [id, deviceId, collectors, status, requestedByEmail, createdAt, expiresAt, deliveredAt, acknowledgedAt]
+      properties:
+        id: { type: string, format: uuid }
+        deviceId: { type: string, format: uuid }
+        collectors:
+          type: array
+          items: { $ref: "#/components/schemas/CollectorId" }
+        status:
+          type: string
+          enum: [PENDING, DELIVERED, ACKNOWLEDGED, COMPLETED, EXPIRED, REJECTED]
+        requestedByEmail: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        deliveredAt: { type: ["string", "null"], format: date-time }
+        acknowledgedAt: { type: ["string", "null"], format: date-time }
+    AssessmentRequestInput:
+      type: object
+      required: [collectors]
+      properties:
+        collectors:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/CollectorId" }
 
+    Finding:
+      type: object
+      required: [id, deviceId, deviceName, ruleId, title, description, severity, confidence, evidence, detectionSource, status, firstSeenAt, lastSeenAt, remediation, assessmentId, collectorId, rawStatus, collectorVersion, statusChangedByEmail, statusChangedAt]
+      properties:
+        id: { type: string, format: uuid }
+        deviceId: { type: string, format: uuid }
+        deviceName: { type: string }
+        ruleId: { type: string }
+        title: { type: string }
+        description: { type: string }
+        severity: { $ref: "#/components/schemas/Severity" }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        evidence: { type: string }
+        detectionSource: { type: string }
+        status: { $ref: "#/components/schemas/FindingStatus" }
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        remediation: { type: string, description: Recommended MANUAL remediation; the platform never changes endpoint configuration }
+        assessmentId: { type: ["string", "null"], format: uuid }
+        collectorId: { type: ["string", "null"] }
+        rawStatus: { type: ["string", "null"] }
+        collectorVersion: { type: ["string", "null"] }
+        statusChangedByEmail: { type: ["string", "null"] }
+        statusChangedAt: { type: ["string", "null"], format: date-time }
+    FindingUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/FindingStatus" }
+        note: { type: string, maxLength: 1000 }
+
+    VulnerabilityMatch:
+      type: object
+      required: [id, deviceId, deviceName, cveId, vendor, product, installedVersion, affectedRange, severity, cvssScore, cvssVector, knownExploited, kevDateAdded, matchConfidence, matchReason, references, remediation, description, publishedAt, firstSeenAt, lastSeenAt]
+      properties:
+        id: { type: string, format: uuid }
+        deviceId: { type: string, format: uuid }
+        deviceName: { type: string }
+        cveId: { type: string }
+        vendor: { type: string }
+        product: { type: string }
+        installedVersion: { type: string }
+        affectedRange: { type: string }
+        severity: { $ref: "#/components/schemas/Severity" }
+        cvssScore: { type: ["number", "null"] }
+        cvssVector: { type: ["string", "null"] }
+        knownExploited: { type: boolean }
+        kevDateAdded: { type: ["string", "null"] }
+        matchConfidence: { $ref: "#/components/schemas/MatchConfidence" }
+        matchReason: { type: string, description: Why this match was made and any limitation }
+        references:
+          type: array
+          items: { type: string }
+        remediation: { type: string }
+        description: { type: string }
+        publishedAt: { type: ["string", "null"], format: date-time }
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+    IntelligenceStatus:
+      type: object
+      required: [nvdConfigured, nvdCachedCves, nvdLastSyncAt, nvdLastError, kevCatalogEntries, kevLastSyncAt, kevLastError, lastMatchRunAt, refreshInProgress, nextAllowedRefreshAt]
+      properties:
+        nvdConfigured: { type: boolean, description: Whether an NVD API key is present (higher rate limits). The feed works without one at lower rates. }
+        nvdCachedCves: { type: integer }
+        nvdLastSyncAt: { type: ["string", "null"], format: date-time }
+        nvdLastError: { type: ["string", "null"] }
+        kevCatalogEntries: { type: integer }
+        kevLastSyncAt: { type: ["string", "null"], format: date-time }
+        kevLastError: { type: ["string", "null"] }
+        lastMatchRunAt: { type: ["string", "null"], format: date-time }
+        refreshInProgress: { type: boolean }
+        nextAllowedRefreshAt: { type: ["string", "null"], format: date-time }
+
+    EnrollmentRequest:
+      type: object
+      required: [id, osType, deviceLabel, status, createdByEmail, createdAt, expiresAt, consumedAt, deviceId, deviceName, codeHint]
+      properties:
+        id: { type: string, format: uuid }
+        osType: { $ref: "#/components/schemas/OsType" }
+        deviceLabel: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [PENDING, CONSUMED, EXPIRED, CANCELLED]
+        createdByEmail: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        consumedAt: { type: ["string", "null"], format: date-time }
+        deviceId: { type: ["string", "null"], format: uuid }
+        deviceName: { type: ["string", "null"] }
+        codeHint: { type: string, description: First 4 characters of the code; the full code is never stored }
+    EnrollmentCreated:
+      allOf:
+        - $ref: "#/components/schemas/EnrollmentRequest"
+        - type: object
+          required: [code, serverUrl, consentSummary]
+          properties:
+            code: { type: string, description: Shown exactly once }
+            serverUrl: { type: string, description: The API base URL the agent must be pointed at }
+            consentSummary:
+              type: array
+              items: { type: string }
+              description: The data collection disclosure to show the device user
+    EnrollmentInput:
+      type: object
+      required: [osType]
+      properties:
+        osType: { $ref: "#/components/schemas/OsType" }
+        deviceLabel: { type: string, maxLength: 120 }
+    AgentBuild:
+      type: object
+      required: [platform, osType, architecture, available, fileName, sizeBytes, sha256, version, builtAt, verified, verificationNote, downloadPath, signed]
+      properties:
+        platform:
+          type: string
+          enum: [windows-amd64, darwin-amd64, darwin-arm64]
+        osType: { $ref: "#/components/schemas/OsType" }
+        architecture: { $ref: "#/components/schemas/Architecture" }
+        available: { type: boolean, description: True only when the binary file exists on this server }
+        fileName: { type: string }
+        sizeBytes: { type: ["integer", "null"] }
+        sha256: { type: ["string", "null"] }
+        version: { type: ["string", "null"] }
+        builtAt: { type: ["string", "null"], format: date-time }
+        verified: { type: boolean, description: True only after the binary was tested on the target OS and recorded as verified }
+        verificationNote: { type: string }
+        downloadPath: { type: ["string", "null"], description: Relative download path, present only when available }
+        signed: { type: boolean }
+
+    ReportExport:
+      type: object
+      required: [id, type, deviceId, deviceName, status, format, createdByEmail, createdAt, completedAt, downloadPath, sizeBytes, error, summary]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [DEVICE_PDF, ORGANIZATION_PDF, FINDINGS_CSV]
+        deviceId: { type: ["string", "null"], format: uuid }
+        deviceName: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [COMPLETED, FAILED]
+        format:
+          type: string
+          enum: [PDF, CSV]
+        createdByEmail: { type: string }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+        downloadPath: { type: ["string", "null"], description: Relative URL to download the file }
+        sizeBytes: { type: ["integer", "null"] }
+        error: { type: ["string", "null"] }
+        summary: { type: string }
+    ReportExportInput:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [DEVICE_PDF, ORGANIZATION_PDF, FINDINGS_CSV]
+        deviceId: { type: string, format: uuid }
+
+    OrganizationSettings:
+      type: object
+      required: [id, name, slug, createdAt, retentionDays, heartbeatIntervalMinutes, postureIntervalHours, inventoryIntervalHours, enrollmentCodeTtlMinutes, onlineThresholdMinutes, allowedOsTypes, minimumAgentVersion, requireMfa, demoMode]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        createdAt: { type: string, format: date-time }
+        retentionDays: { type: integer }
+        heartbeatIntervalMinutes: { type: integer }
+        postureIntervalHours: { type: integer }
+        inventoryIntervalHours: { type: integer }
+        enrollmentCodeTtlMinutes: { type: integer }
+        onlineThresholdMinutes: { type: integer }
+        allowedOsTypes:
+          type: array
+          items: { $ref: "#/components/schemas/OsType" }
+        minimumAgentVersion: { type: string }
+        requireMfa: { type: boolean, description: Policy flag displayed to admins; MFA enrollment itself is handled by the identity provider }
+        demoMode: { type: boolean }
+    OrganizationSettingsUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        retentionDays: { type: integer, minimum: 7, maximum: 730 }
+        heartbeatIntervalMinutes: { type: integer, minimum: 1, maximum: 60 }
+        postureIntervalHours: { type: integer, minimum: 1, maximum: 72 }
+        inventoryIntervalHours: { type: integer, minimum: 6, maximum: 168 }
+        enrollmentCodeTtlMinutes: { type: integer, minimum: 5, maximum: 120 }
+        onlineThresholdMinutes: { type: integer, minimum: 2, maximum: 180 }
+        allowedOsTypes:
+          type: array
+          items: { $ref: "#/components/schemas/OsType" }
+        requireMfa: { type: boolean }
+    Member:
+      type: object
+      required: [id, email, name, role, userId, createdAt, lastSignInAt, isCurrentUser]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: ["string", "null"] }
+        role: { $ref: "#/components/schemas/Role" }
+        userId: { type: ["string", "null"], description: Null until the invited person signs in for the first time }
+        createdAt: { type: string, format: date-time }
+        lastSignInAt: { type: ["string", "null"], format: date-time }
+        isCurrentUser: { type: boolean }
+    MemberInput:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/Role" }
+    MemberUpdate:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+    DataDeletionInput:
+      type: object
+      required: [confirmation]
+      properties:
+        confirmation: { type: string, description: Must equal the organization slug }
+    DataDeletionResult:
+      type: object
+      required: [deletedAssessments, deletedFindings, deletedDevices, completedAt]
+      properties:
+        deletedAssessments: { type: integer }
+        deletedFindings: { type: integer }
+        deletedDevices: { type: integer }
+        completedAt: { type: string, format: date-time }
+
+    AuditLog:
+      type: object
+      required: [id, action, actorEmail, actorType, targetType, targetId, targetLabel, details, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string }
+        actorEmail: { type: ["string", "null"] }
+        actorType:
+          type: string
+          enum: [USER, DEVICE, SYSTEM]
+        targetType: { type: ["string", "null"] }
+        targetId: { type: ["string", "null"] }
+        targetLabel: { type: ["string", "null"] }
+        details: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    DnsCheckResult:
+      type: object
+      required: [status, record, evaluation, recommendations]
+      properties:
+        status: { $ref: "#/components/schemas/CheckStatus" }
+        record: { type: ["string", "null"] }
+        evaluation: { type: string }
+        recommendations:
+          type: array
+          items: { type: string }
+    EmailDomainAudit:
+      type: object
+      required: [id, domain, checkedAt, checkedByEmail, spf, dmarc, dkim, mx, overallStatus, limitations]
+      properties:
+        id: { type: string, format: uuid }
+        domain: { type: string }
+        checkedAt: { type: string, format: date-time }
+        checkedByEmail: { type: string }
+        spf: { $ref: "#/components/schemas/DnsCheckResult" }
+        dmarc: { $ref: "#/components/schemas/DnsCheckResult" }
+        dkim:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/DnsCheckResult"
+              - type: object
+                required: [selector]
+                properties:
+                  selector: { type: string }
+        mx:
+          type: array
+          items: { type: string }
+        overallStatus: { $ref: "#/components/schemas/CheckStatus" }
+        limitations: { type: string, description: States plainly that DNS checks do not detect malicious inbox email }
+    EmailDomainAuditInput:
+      type: object
+      required: [domain]
+      properties:
+        domain: { type: string, minLength: 3, maxLength: 253 }
+        dkimSelectors:
+          type: array
+          items: { type: string, maxLength: 63 }
+          maxItems: 10
+
+    RuleDefinition:
+      type: object
+      required: [ruleId, title, description, severity, triggerLogic, evidenceRequirement, remediation, platforms, collectorId]
+      properties:
+        ruleId: { type: string }
+        title: { type: string }
+        description: { type: string }
+        severity: { $ref: "#/components/schemas/Severity" }
+        triggerLogic: { type: string }
+        evidenceRequirement: { type: string }
+        remediation: { type: string }
+        platforms:
+          type: array
+          items: { $ref: "#/components/schemas/OsType" }
+        collectorId: { $ref: "#/components/schemas/CollectorId" }
