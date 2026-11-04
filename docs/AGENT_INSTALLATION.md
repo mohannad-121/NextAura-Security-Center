@@ -11,10 +11,10 @@ Before installing, the device user must review the consent notice, confirm the c
 3. Run the exact command displayed by the enrollment wizard:
 
    ```powershell
-   .\install-agent.ps1 -ServerUrl "https://security.example.com" -EnrollmentCode "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+   .\install-agent.ps1 -ServerUrl "https://security.example.com"
    ```
 
-The installer copies the binary to `C:\Program Files\NextAura`, restricts `C:\ProgramData\NextAura\Agent` to LocalSystem and Administrators, redeems the one-time code, uploads the initial assessment, creates the visible `NextAuraAgent` service, and starts it. It does not disable Defender, change firewall rules, or modify security settings.
+The installer requests the one-time code using PowerShell's hidden secure-input prompt and passes it to the agent over standard input. The plaintext code is not included in shell history, process arguments, installer output, or persistent state. It then copies the binary to `C:\Program Files\NextAura`, restricts `C:\ProgramData\NextAura\Agent` to LocalSystem and Administrators, redeems the code, uploads the initial assessment, creates or repairs the visible `NextAuraAgent` service, and starts it. It does not disable Defender, change firewall rules, or modify security settings.
 
 Diagnostics:
 
@@ -35,10 +35,10 @@ Choose `darwin-amd64` for an Intel Mac or `darwin-arm64` for Apple silicon. Conf
 3. Run the exact command displayed by the wizard:
 
    ```bash
-   sudo ./install-agent.sh --server 'https://security.example.com' --code 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'
+   sudo ./install-agent.sh --server 'https://security.example.com'
    ```
 
-The installer copies the binary to `/usr/local/bin`, protects `/Library/Application Support/NextAura/Agent`, enrolls and assesses the device, installs `com.nextaura.agent.plist`, and starts a LaunchDaemon. It does not bypass Gatekeeper, SIP, TCC, or Full Disk Access.
+The installer creates `/usr/local/bin` if needed, requests the one-time code from `/dev/tty` with echo disabled, and passes it to the agent over standard input. The code is not included in shell history, process arguments, installer output, or persistent state. It then copies the binary, protects `/Library/Application Support/NextAura/Agent`, enrolls and assesses the device, installs `com.nextaura.agent.plist`, and starts or repairs the LaunchDaemon. It does not bypass Gatekeeper, SIP, TCC, or Full Disk Access.
 
 Diagnostics:
 
@@ -62,11 +62,11 @@ Do not remove quarantine attributes or instruct users to bypass OS security warn
 
 ## Agent commands
 
-| Command                      | Description                                                |
-| ---------------------------- | ---------------------------------------------------------- |
-| `enroll --server --code`     | Redeem a one-time code and store a per-device token        |
-| `run`                        | Foreground service loop                                    |
-| `assess [--collectors A,B]`  | Run fixed collectors and upload                            |
-| `collect [--collectors A,B]` | Print fixed collector results locally without upload       |
-| `status`                     | Show enrollment with token redacted                        |
-| `unenroll`                   | Remove only the local token; server revocation is separate |
+| Command                        | Description                                                  |
+| ------------------------------ | ------------------------------------------------------------ |
+| `enroll --server --code-stdin` | Read a one-time code from stdin and store a per-device token |
+| `run`                          | Foreground service loop                                      |
+| `assess [--collectors A,B]`    | Run fixed collectors and upload                              |
+| `collect [--collectors A,B]`   | Print fixed collector results locally without upload         |
+| `status`                       | Show enrollment with token redacted                          |
+| `unenroll`                     | Remove only the local token; server revocation is separate   |

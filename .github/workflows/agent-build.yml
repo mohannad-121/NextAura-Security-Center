@@ -3,16 +3,24 @@ name: Agent build validation
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - "agent/**"
+      - "artifacts/security-center/src/pages/enroll.tsx"
       - ".github/workflows/agent-build.yml"
   pull_request:
     paths:
       - "agent/**"
+      - "artifacts/security-center/src/pages/enroll.tsx"
       - ".github/workflows/agent-build.yml"
 
 permissions:
   contents: read
+
+concurrency:
+  group: agent-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   GO_VERSION: "1.22.x"
@@ -35,6 +43,7 @@ jobs:
         run: |
           go mod verify
           go test ./...
+          node --test scripts/*.test.mjs
           $unformatted = @(gofmt -l .)
           if ($unformatted.Count -gt 0) {
             throw "gofmt required: $($unformatted -join ', ')"
@@ -42,6 +51,16 @@ jobs:
       - name: Build, execute entry point, and package
         shell: pwsh
         run: .\scripts\build-agent.ps1
+      - name: Verify package contents
+        shell: pwsh
+        run: |
+          $packageDir = Join-Path $env:RUNNER_TEMP 'nextaura-package'
+          Expand-Archive 'dist\nextaura-agent-windows-amd64.zip' $packageDir
+          @('nextaura-agent.exe', 'install-agent.ps1', 'uninstall-agent.ps1', 'README.txt') | ForEach-Object {
+            if (-not (Test-Path -LiteralPath (Join-Path $packageDir $_) -PathType Leaf)) {
+              throw "Missing package member: $_"
+            }
+          }
       - name: Record checksum and signing status
         shell: pwsh
         run: |
@@ -88,10 +107,19 @@ jobs:
         run: |
           go mod verify
           go test ./...
+          node --test scripts/*.test.mjs
           test -z "$(gofmt -l .)"
       - name: Build and package
         shell: bash
         run: ./scripts/build-agent.sh darwin-${{ matrix.arch }}
+      - name: Verify package executable permissions
+        shell: bash
+        run: |
+          package_dir=$(mktemp -d)
+          tar -xzf "dist/nextaura-agent-darwin-${{ matrix.arch }}.tar.gz" -C "$package_dir"
+          test -x "$package_dir/nextaura-agent"
+          test -x "$package_dir/install-agent.sh"
+          test -x "$package_dir/uninstall-agent.sh"
       - name: Execute native entry point and record trust state
         shell: bash
         run: |

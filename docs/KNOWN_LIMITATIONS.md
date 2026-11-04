@@ -7,6 +7,6 @@
 - **CVE matching is inventory-based.** It depends on vendor/product names as installed packages report them. Confidence is stated per match; `POSSIBLE` matches need human review. No NVD key means slow initial population (5 requests / 30 s).
 - **Email security audit** is DNS-only (SPF/DMARC/DKIM/MX records). It cannot confirm that mail actually passes alignment; DKIM requires the selector names.
 - **Single-instance scheduler** for intelligence refresh.
-- **Checked-in packages are unsigned and unverified.** The wizard refuses their download until a native enrollment test is recorded; production trust additionally requires Windows signing or macOS signing/notarization.
+- **Checked-in packages are unsigned and unverified.** The wizard refuses their download until a native enrollment test is recorded against the exact generated SHA-256 and build identity. The API does not infer signing from manifest metadata; production trust additionally requires independently verified Windows signing or macOS signing/notarization.
 - **Linux endpoints** are out of scope.
 - **No native macOS installation was executed in this Windows audit environment.** CI performs native compile/test/entry-point checks, but `verified` remains a separate manual end-to-end enrollment assertion.

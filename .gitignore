@@ -69,6 +69,7 @@ Thumbs.db
 
 # Supabase CLI local state
 supabase/.temp/
+supabase/.branches/
 
 # agent binaries ship with the deployment (built by agent/scripts/build-agent.sh)
 !agent/dist

@@ -44,10 +44,10 @@ To connect a build to the website:
 3. Perform a real installation, enrollment, initial assessment, heartbeat, restart, and uninstall test on that target OS.
 4. Complete production signing/notarization when distributing as trusted software.
 5. Copy the package into `agent/dist` (or the protected `AGENT_DIST_DIR`).
-6. Update `manifest.json` with the package version/build time and set `verified.<platform>` only after the native enrollment test. Set `signed.<platform>` only after cryptographic verification.
+6. After the native test, add `nativeVerification` beneath the exact platform artifact in `manifest.json`. Its `sha256` and `buildId` must exactly repeat that artifact's generated values, and `testedAt` plus a durable `evidence` reference are required. Never copy approval metadata to a rebuilt artifact.
 7. Deploy the API image with the package directory included and immutable.
 
-The API calculates the package checksum at runtime and refuses to download missing or unverified packages.
+The manifest writer derives each `buildId` from version, platform, and package SHA-256 and clears all native approvals on every rebuild. The API recomputes the package checksum and build identity at runtime and refuses missing, mismatched, legacy-boolean, or unapproved packages. The API always reports `signed: false`; editable manifest metadata is not accepted as proof of Authenticode, Developer ID signing, or notarization. Production signing must be cryptographically verified outside this manifest flow.
 
 ## Application build
 

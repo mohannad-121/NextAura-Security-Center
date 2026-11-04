@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the NextAura agent targets into agent/dist, creates complete install
-# packages, and writes manifest.json + SHA256SUMS. Run from anywhere.
+# packages, and writes a hash-bound manifest + SHA256SUMS. Run from anywhere.
 #
 #   ./agent/scripts/build-agent.sh            # all targets
 #   ./agent/scripts/build-agent.sh darwin-arm64
@@ -28,29 +28,14 @@ for t in $TARGETS; do
     cp scripts/uninstall-agent-macos.sh "$stage/uninstall-agent.sh"
     cp scripts/com.nextaura.agent.plist "$stage/com.nextaura.agent.plist"
     cp scripts/PACKAGE_README.txt "$stage/README.txt"
-    chmod 0755 "$stage/nextaura-agent" "$stage/install-agent.sh" "$stage/uninstall-agent.sh"
-    tar -C "$stage" -czf "dist/nextaura-agent-$t.tar.gz" .
+    raw_tar=$(mktemp)
+    tar --mode=0755 -C "$stage" -cf "$raw_tar" nextaura-agent install-agent.sh uninstall-agent.sh
+    tar --mode=0644 -C "$stage" -rf "$raw_tar" com.nextaura.agent.plist README.txt
+    gzip -n "$raw_tar"
+    mv -f "$raw_tar.gz" "dist/nextaura-agent-$t.tar.gz"
   fi
   rm -rf "$stage"
 done
-(
-  cd dist
-  : > SHA256SUMS
-  find . -maxdepth 1 -type f \( -name 'nextaura-agent-*.zip' -o -name 'nextaura-agent-*.tar.gz' \) -print | sort | while IFS= read -r package; do
-    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$package"; else shasum -a 256 "$package"; fi
-  done >> SHA256SUMS
-)
-# Preserve any existing verified/signed flags.
-if [ -f dist/manifest.json ]; then
-  verified=$(sed -n 's/.*"verified": *\({[^}]*}\).*/\1/p' dist/manifest.json); signed=$(sed -n 's/.*"signed": *\({[^}]*}\).*/\1/p' dist/manifest.json)
-fi
-cat > dist/manifest.json <<JSON
-{
-  "version": "$VERSION",
-  "builtAt": "$BUILT_AT",
-  "verified": ${verified:-{\}},
-  "signed": ${signed:-{\}}
-}
-JSON
-echo "done. Mark a platform as tested by setting verified.<platform>=true in dist/manifest.json."
+node scripts/write-manifest.mjs "$VERSION" "$BUILT_AT"
+echo "done. Rebuilds always clear native approvals; see docs/DEPLOYMENT.md."
 cat dist/SHA256SUMS

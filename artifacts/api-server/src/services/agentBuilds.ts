@@ -48,28 +48,52 @@ export function platformFile(platform: string) {
   return PLATFORMS.find((p) => p.platform === platform) ?? null;
 }
 
-interface Manifest {
-  version?: string;
-  builtAt?: string;
-  verified?: Partial<Record<PlatformId, boolean>>;
-  signed?: Partial<Record<PlatformId, boolean>>;
+interface NativeVerification {
+  sha256?: string;
+  buildId?: string;
+  testedAt?: string;
+  evidence?: string;
 }
 
-async function readManifest(): Promise<Manifest> {
+interface ManifestArtifact {
+  fileName?: string;
+  sha256?: string;
+  buildId?: string;
+  nativeVerification?: NativeVerification | null;
+}
+
+interface Manifest {
+  schemaVersion?: number;
+  version?: string;
+  builtAt?: string;
+  artifacts?: Partial<Record<PlatformId, ManifestArtifact>>;
+}
+
+async function readManifest(distDir: string): Promise<Manifest> {
   try {
     return JSON.parse(
-      await fs.readFile(path.join(AGENT_DIST_DIR, "manifest.json"), "utf8"),
+      await fs.readFile(path.join(distDir, "manifest.json"), "utf8"),
     ) as Manifest;
   } catch {
     return {};
   }
 }
 
-export async function listAgentBuilds() {
-  const manifest = await readManifest();
+export function artifactBuildId(
+  version: string,
+  platform: PlatformId,
+  sha256: string,
+): string {
+  return createHash("sha256")
+    .update(`${version}\n${platform}\n${sha256}`)
+    .digest("hex");
+}
+
+export async function listAgentBuilds(distDir = AGENT_DIST_DIR) {
+  const manifest = await readManifest(distDir);
   return Promise.all(
     PLATFORMS.map(async (p) => {
-      const file = path.join(AGENT_DIST_DIR, p.fileName);
+      const file = path.join(distDir, p.fileName);
       let stat: Awaited<ReturnType<typeof fs.stat>> | null = null;
       try {
         stat = await fs.stat(file);
@@ -82,7 +106,24 @@ export async function listAgentBuilds() {
         const buf = await fs.readFile(file);
         sha256 = createHash("sha256").update(buf).digest("hex");
       }
-      const verified = available && manifest.verified?.[p.platform] === true;
+      const artifact = manifest.artifacts?.[p.platform];
+      const version = manifest.version ?? "";
+      const expectedBuildId =
+        sha256 && version ? artifactBuildId(version, p.platform, sha256) : null;
+      const manifestMatches =
+        available &&
+        manifest.schemaVersion === 2 &&
+        artifact?.fileName === p.fileName &&
+        artifact.sha256 === sha256 &&
+        artifact.buildId === expectedBuildId;
+      const approval = artifact?.nativeVerification;
+      const verified =
+        manifestMatches &&
+        !!approval &&
+        approval.sha256 === sha256 &&
+        approval.buildId === expectedBuildId &&
+        !!approval.testedAt &&
+        !!approval.evidence;
       return {
         platform: p.platform,
         osType: p.osType,
@@ -96,13 +137,17 @@ export async function listAgentBuilds() {
         verified,
         verificationNote: !available
           ? "No complete install package is present on this server. Build it on the target OS and place the package in agent/dist/."
-          : verified
-            ? "Package passed a native test enrollment and is approved for controlled testing."
-            : "Package exists but download is disabled until a native test enrollment is recorded in agent/dist/manifest.json.",
+          : !manifestMatches
+            ? "Package exists but its SHA-256/build identity does not match manifest.json. Rebuild it before testing."
+            : verified
+              ? "Package passed a native test enrollment and is approved for controlled testing."
+              : "Package integrity matches the manifest, but download is disabled until a hash-bound native test record is added.",
         downloadPath: verified
           ? `/api/agent-builds/${p.platform}/download`
           : null,
-        signed: available && manifest.signed?.[p.platform] === true,
+        // Signing is deliberately never inferred from editable metadata. A
+        // future release system must cryptographically verify the package.
+        signed: false,
       };
     }),
   );

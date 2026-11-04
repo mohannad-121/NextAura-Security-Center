@@ -271,13 +271,15 @@ export default function Enroll() {
                   After extracting the downloaded package, run
                 </div>
                 <CodeLine copy>
-                  {installCommand(choice, created.serverUrl, created.code)}
+                  {installCommand(choice, created.serverUrl)}
                 </CodeLine>
               </div>
               <Caveat tone="warn" className="mt-4">
                 Administrator authorization is required because the installer
                 creates a visible background service and protects the device
-                credential. Do not disable SmartScreen, Gatekeeper, SIP, or TCC.
+                credential. It will request the enrollment code with hidden
+                input so the code is not stored in shell history or process
+                arguments. Do not disable SmartScreen, Gatekeeper, SIP, or TCC.
               </Caveat>
               <Nav
                 onBack={() => setStep(3)}
@@ -574,10 +576,10 @@ function CodeStep({
   );
 }
 
-function installCommand(choice: Choice, serverUrl: string, code: string) {
+function installCommand(choice: Choice, serverUrl: string) {
   return choice.osType === "WINDOWS"
-    ? `.\\install-agent.ps1 -ServerUrl "${serverUrl}" -EnrollmentCode "${code}"`
-    : `sudo ./install-agent.sh --server '${serverUrl}' --code '${code}'`;
+    ? `.\\install-agent.ps1 -ServerUrl "${serverUrl}"`
+    : `sudo ./install-agent.sh --server '${serverUrl}'`;
 }
 
 function WaitEnroll({

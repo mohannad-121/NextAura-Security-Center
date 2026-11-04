@@ -18,5 +18,8 @@ Copy-Item .\scripts\PACKAGE_README.txt (Join-Path $stage 'README.txt')
 $archive = '.\dist\nextaura-agent-windows-amd64.zip'
 if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
-Get-FileHash $archive -Algorithm SHA256 | Format-List
+$version = [regex]::Match((Get-Content .\internal\config\config.go -Raw), 'const Version = "([^"]+)"').Groups[1].Value
+if (-not $version) { throw 'Could not read agent version.' }
+node .\scripts\write-manifest.mjs $version ([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))
+if ($LASTEXITCODE -ne 0) { throw 'Could not generate the hash-bound artifact manifest.' }
 Write-Host "Package created: $archive"

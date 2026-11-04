@@ -10,10 +10,13 @@ Before installation:
 3. Confirm the displayed server URL and data-collection consent notice.
 
 Windows: open an elevated PowerShell in the extracted package and run:
-  .\install-agent.ps1 -ServerUrl https://YOUR-SERVER -EnrollmentCode YOUR-CODE
+  .\install-agent.ps1 -ServerUrl https://YOUR-SERVER
 
 macOS: open Terminal in the extracted package and run:
-  sudo ./install-agent.sh --server https://YOUR-SERVER --code YOUR-CODE
+  sudo ./install-agent.sh --server https://YOUR-SERVER
+
+The installer then requests the one-time enrollment code with hidden input. Do
+not put the code directly in a shell command, script, log, or support ticket.
 
 Do not disable SmartScreen, Gatekeeper, SIP, TCC, or other OS protections.
 Production macOS packages must be Developer ID signed, notarized, and stapled.

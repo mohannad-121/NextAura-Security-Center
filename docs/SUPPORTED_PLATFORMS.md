@@ -30,4 +30,4 @@
 | Software inventory                   | Uninstall registry keys                                   | system_profiler SPApplicationsDataType                               |
 | Startup inventory                    | Run keys, Startup folders, scheduled tasks, auto services | LaunchDaemons / LaunchAgents                                         |
 
-Support tables are dated and fail closed for unknown future releases. Verification status of complete install packages is shown per platform in the enrollment wizard, driven by `agent/dist/manifest.json`.
+Support tables are dated and fail closed for unknown future releases. Verification status of complete install packages is shown per platform in the enrollment wizard only when the runtime SHA-256 and deterministic build identity match a native-test record in `agent/dist/manifest.json`.

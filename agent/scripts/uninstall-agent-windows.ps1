@@ -1,5 +1,5 @@
-# Removes the Windows service and binary. Server-side revocation must be done
-# from the dashboard. Local enrollment state is preserved unless explicitly requested.
+# Removes the Windows service and its exact installed binary. Server-side
+# revocation must be done from the dashboard. Local state is opt-in removal.
 [CmdletBinding()]
 param(
   [switch]$RemoveLocalState,
@@ -8,6 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $serviceName = 'NextAuraAgent'
+$destination = Join-Path $InstallDirectory 'nextaura-agent.exe'
 $stateDirectory = Join-Path $env:ProgramData 'NextAura\Agent'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -17,14 +18,22 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($service) {
-  if ($service.Status -ne 'Stopped') { Stop-Service -Name $serviceName -Force }
+  if ($service.Status -ne 'Stopped') {
+    Stop-Service -Name $serviceName -Force
+    $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+  }
   & sc.exe delete $serviceName | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Could not delete the NextAuraAgent service.' }
 }
-if (Test-Path -LiteralPath $InstallDirectory) {
-  Remove-Item -LiteralPath $InstallDirectory -Recurse -Force
+
+if (Test-Path -LiteralPath $destination -PathType Leaf) {
+  Remove-Item -LiteralPath $destination -Force
 }
-if ($RemoveLocalState -and (Test-Path -LiteralPath $stateDirectory)) {
+if ((Test-Path -LiteralPath $InstallDirectory -PathType Container) -and -not (Get-ChildItem -LiteralPath $InstallDirectory -Force)) {
+  Remove-Item -LiteralPath $InstallDirectory -Force
+}
+
+if ($RemoveLocalState -and (Test-Path -LiteralPath $stateDirectory -PathType Container)) {
   Remove-Item -LiteralPath $stateDirectory -Recurse -Force
   Write-Host 'Removed local enrollment state. Also revoke the device in the dashboard.'
 } else {

@@ -1,6 +1,6 @@
 // nextaura-agent — read-only endpoint assessment agent for NextAura Security Center.
 //
-//	nextaura-agent enroll  --server https://... --code XXXXX-XXXXX-XXXXX
+//	printf '%s\n' "$CODE" | nextaura-agent enroll --server https://... --code-stdin
 //	nextaura-agent run                 (foreground service loop)
 //	nextaura-agent assess [--collectors A,B]  (one-off assessment, uploads)
 //	nextaura-agent collect [--collectors A,B] (print results locally, no upload)
@@ -14,6 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime"
@@ -67,7 +68,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `nextaura-agent `+config.Version+`
 Commands:
-  enroll   --server <https url> --code <enrollment code>
+  enroll   --server <https url> --code-stdin
   run      run the service loop in the foreground
   assess   run collectors now and upload (--collectors A,B)
   collect  run collectors and print JSON locally without uploading
@@ -89,10 +90,10 @@ func osType() (string, error) {
 func cmdEnroll(dir string, args []string) error {
 	fs := flag.NewFlagSet("enroll", flag.ExitOnError)
 	server := fs.String("server", "", "server URL, e.g. https://security.example.com")
-	code := fs.String("code", "", "enrollment code from the dashboard")
+	codeStdin := fs.Bool("code-stdin", false, "read the enrollment code from standard input")
 	fs.Parse(args)
-	if *server == "" || *code == "" {
-		return errors.New("--server and --code are required")
+	if *server == "" || !*codeStdin {
+		return errors.New("--server and --code-stdin are required")
 	}
 	ost, err := osType()
 	if err != nil {
@@ -105,6 +106,10 @@ func cmdEnroll(dir string, args []string) error {
 	if _, err := config.Load(dir); err == nil {
 		return errors.New("already enrolled; run `nextaura-agent unenroll` first")
 	}
+	code, err := readEnrollmentCode(os.Stdin)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Println("Collecting system identification…")
@@ -114,7 +119,8 @@ func cmdEnroll(dir string, args []string) error {
 	}
 	c := client.New(srv, "")
 	fmt.Println("Enrolling with", srv, "…")
-	resp, err := c.Enroll(ctx, model.EnrollRequest{Code: strings.TrimSpace(*code), AgentVersion: config.Version, OSType: ost, System: *res[0].System})
+	resp, err := c.Enroll(ctx, model.EnrollRequest{Code: code, AgentVersion: config.Version, OSType: ost, System: *res[0].System})
+	code = ""
 	if err != nil {
 		return fmt.Errorf("enrollment failed: %w", err)
 	}
@@ -127,13 +133,30 @@ func cmdEnroll(dir string, args []string) error {
 	fmt.Println("Running initial assessment…")
 	r := scheduler.New(dir, st)
 	if _, err := r.RunAssessment(ctx, "ENROLLMENT", model.AllCollectors, nil); err != nil {
-		return fmt.Errorf("initial assessment failed (the device is enrolled; the service will retry): %w", err)
+		fmt.Fprintln(os.Stderr, "warning: initial assessment failed; enrollment succeeded and the service will retry:", err)
+		return nil
 	}
 	st.LastPostureAt = time.Now()
 	st.LastInventoryAt = time.Now()
 	_ = config.Save(dir, st)
 	fmt.Println("Initial assessment uploaded. Install the service to keep reporting (see docs/AGENT_INSTALLATION.md).")
 	return nil
+}
+
+func readEnrollmentCode(r io.Reader) (string, error) {
+	const maxCodeBytes = 256
+	b, err := io.ReadAll(io.LimitReader(r, maxCodeBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("read enrollment code: %w", err)
+	}
+	if len(b) > maxCodeBytes {
+		return "", errors.New("enrollment code input is too long")
+	}
+	code := strings.TrimSpace(string(b))
+	if code == "" {
+		return "", errors.New("enrollment code input is empty")
+	}
+	return code, nil
 }
 
 func cmdRun(dir string) error {
