@@ -97,8 +97,12 @@ func ck(id, category, title, source, perms string) checkBuilder {
 func (b checkBuilder) status(status, evidence, confidence string) model.Check {
 	return model.Check{CheckID: b.id, Category: b.category, Title: b.title, Status: status, Evidence: evidence, DataSource: b.source, Confidence: confidence, RequiredPermissions: b.perms}
 }
-func (b checkBuilder) pass(evidence string) model.Check { return b.status(model.StatusPass, evidence, "HIGH") }
-func (b checkBuilder) fail(evidence string) model.Check { return b.status(model.StatusFail, evidence, "HIGH") }
+func (b checkBuilder) pass(evidence string) model.Check {
+	return b.status(model.StatusPass, evidence, "HIGH")
+}
+func (b checkBuilder) fail(evidence string) model.Check {
+	return b.status(model.StatusFail, evidence, "HIGH")
+}
 func (b checkBuilder) warn(evidence string) model.Check {
 	return b.status(model.StatusWarning, evidence, "MEDIUM")
 }

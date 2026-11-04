@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds the NextAura agent for all supported targets into agent/dist and
-# writes manifest.json + SHA256SUMS. Run from anywhere; requires Go 1.22+.
+# Builds the NextAura agent targets into agent/dist, creates complete install
+# packages, and writes a hash-bound manifest + SHA256SUMS. Run from anywhere.
 #
 #   ./agent/scripts/build-agent.sh            # all targets
 #   ./agent/scripts/build-agent.sh darwin-arm64
@@ -15,19 +15,33 @@ for t in $TARGETS; do
   out="dist/nextaura-agent-$t"; [ "$os" = windows ] && out="$out.exe"
   echo "building $t -> $out"
   CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" -o "$out" ./cmd/nextaura-agent
+  stage=$(mktemp -d)
+  if [ "$os" = windows ]; then
+    cp "$out" "$stage/nextaura-agent.exe"
+    cp scripts/install-service-windows.ps1 "$stage/install-agent.ps1"
+    cp scripts/uninstall-agent-windows.ps1 "$stage/uninstall-agent.ps1"
+    cp scripts/PACKAGE_README.txt "$stage/README.txt"
+    (cd "$stage" && zip -q -r "$OLDPWD/dist/nextaura-agent-$t.zip" .)
+  else
+    cp "$out" "$stage/nextaura-agent"
+    cp scripts/install-service-macos.sh "$stage/install-agent.sh"
+    cp scripts/uninstall-agent-macos.sh "$stage/uninstall-agent.sh"
+    cp scripts/com.nextaura.agent.plist "$stage/com.nextaura.agent.plist"
+    cp scripts/PACKAGE_README.txt "$stage/README.txt"
+    if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+      raw_tar=$(mktemp)
+      tar --mode=0755 -C "$stage" -cf "$raw_tar" nextaura-agent install-agent.sh uninstall-agent.sh
+      tar --mode=0644 -C "$stage" -rf "$raw_tar" com.nextaura.agent.plist README.txt
+      gzip -n "$raw_tar"
+      mv -f "$raw_tar.gz" "dist/nextaura-agent-$t.tar.gz"
+    else
+      chmod 0755 "$stage/nextaura-agent" "$stage/install-agent.sh" "$stage/uninstall-agent.sh"
+      chmod 0644 "$stage/com.nextaura.agent.plist" "$stage/README.txt"
+      tar -C "$stage" -czf "dist/nextaura-agent-$t.tar.gz" .
+    fi
+  fi
+  rm -rf "$stage"
 done
-( cd dist && (sha256sum nextaura-agent-* 2>/dev/null || shasum -a 256 nextaura-agent-*) > SHA256SUMS )
-# Preserve any existing verified/signed flags.
-if [ -f dist/manifest.json ]; then
-  verified=$(sed -n 's/.*"verified": *\({[^}]*}\).*/\1/p' dist/manifest.json); signed=$(sed -n 's/.*"signed": *\({[^}]*}\).*/\1/p' dist/manifest.json)
-fi
-cat > dist/manifest.json <<JSON
-{
-  "version": "$VERSION",
-  "builtAt": "$BUILT_AT",
-  "verified": ${verified:-{\}},
-  "signed": ${signed:-{\}}
-}
-JSON
-echo "done. Mark a platform as tested by setting verified.<platform>=true in dist/manifest.json."
+node scripts/write-manifest.mjs "$VERSION" "$BUILT_AT"
+echo "done. Rebuilds always clear native approvals; see docs/DEPLOYMENT.md."
 cat dist/SHA256SUMS

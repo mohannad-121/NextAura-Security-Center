@@ -6,6 +6,7 @@ import {
   integer,
   boolean,
   index,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
 import { organizationsTable } from "./organizations";
@@ -132,7 +133,9 @@ export const deviceHeartbeatsTable = pgTable(
       .notNull()
       .references(() => devicesTable.id, { onDelete: "cascade" }),
     agentVersion: text("agent_version").notNull(),
-    agentTimestamp: timestamp("agent_timestamp", { withTimezone: true }).notNull(),
+    agentTimestamp: timestamp("agent_timestamp", {
+      withTimezone: true,
+    }).notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -188,7 +191,7 @@ export const agentRequestReplayTable = pgTable(
     processed: boolean("processed").notNull().default(true),
   },
   (t) => [
-    index("replay_device_request_idx").on(t.deviceId, t.requestId),
+    uniqueIndex("replay_device_request_idx").on(t.deviceId, t.requestId),
     index("replay_seen_idx").on(t.seenAt),
   ],
 );

@@ -280,17 +280,29 @@ func windowsSupportCheck(b checkBuilder, caption, build string) model.Check {
 	case n == 0:
 		return b.unknown("Build number not available")
 	case strings.Contains(lc, "server"):
-		if n < 17763 {
+		if n < 14393 {
 			return b.fail(fmt.Sprintf("%s build %d is past mainstream+extended support", caption, n))
 		}
-		return b.pass(fmt.Sprintf("%s build %d is in vendor support", caption, n))
-	case n >= 22000: // Windows 11
-		if n < 22631 {
-			return b.fail(fmt.Sprintf("%s build %d (21H2/22H2) reached end of servicing; update to a supported feature release", caption, n))
+		return b.pass(fmt.Sprintf("%s build %d is a supported Windows Server 2016 or later release as of 2026-11-04", caption, n))
+	case n >= 26200: // Windows 11 25H2, 26H2, and 26H1 device builds
+		return b.pass(fmt.Sprintf("%s build %d is a supported Windows 11 release as of 2026-11-04", caption, n))
+	case n == 26100: // Windows 11 24H2: consumer support ended, enterprise remains
+		if strings.Contains(lc, "enterprise") || strings.Contains(lc, "education") || strings.Contains(lc, "iot") {
+			return b.pass(fmt.Sprintf("%s build %d remains in enterprise servicing as of 2026-11-04", caption, n))
 		}
-		return b.pass(fmt.Sprintf("%s build %d is a supported Windows 11 release", caption, n))
+		return b.fail(fmt.Sprintf("%s build %d (24H2) reached end of servicing for Home/Pro on 2026-10-13", caption, n))
+	case n == 22631: // Windows 11 23H2: enterprise support ends 2026-11-10
+		if strings.Contains(lc, "enterprise") || strings.Contains(lc, "education") || strings.Contains(lc, "iot") {
+			return b.warn(fmt.Sprintf("%s build %d reaches end of servicing on 2026-11-10; upgrade immediately", caption, n))
+		}
+		return b.fail(fmt.Sprintf("%s build %d (23H2) is out of support for Home/Pro", caption, n))
+	case n >= 22000:
+		return b.fail(fmt.Sprintf("%s build %d reached end of servicing; update to a supported Windows 11 release", caption, n))
 	case n >= 10240: // Windows 10
-		return b.fail(fmt.Sprintf("%s build %d: Windows 10 reached end of support on 2025-10-14 (unless enrolled in ESU, which the agent cannot verify)", caption, n))
+		if strings.Contains(lc, "ltsc") || strings.Contains(lc, "long-term servicing") {
+			return b.pass(fmt.Sprintf("%s build %d reports an LTSC edition; confirm its exact lifecycle with Microsoft", caption, n))
+		}
+		return b.warn(fmt.Sprintf("%s build %d: standard Windows 10 support ended on 2025-10-14; ESU enrollment cannot be verified by this agent", caption, n))
 	default:
 		return b.fail(fmt.Sprintf("%s build %d is unsupported", caption, n))
 	}

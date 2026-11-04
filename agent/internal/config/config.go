@@ -83,7 +83,7 @@ func Save(dir string, s *State) error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, statePath(dir))
+	return replaceFile(tmp, statePath(dir))
 }
 
 func Remove(dir string) error {

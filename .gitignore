@@ -3,6 +3,7 @@
 # compiled output
 dist
 !agent/dist
+!agent/dist/**
 tmp
 out-tsc
 *.tsbuildinfo
@@ -17,6 +18,17 @@ out-tsc
 
 # dependencies
 node_modules
+
+# local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
 
 # IDEs and editors
 /.idea
@@ -55,5 +67,10 @@ Thumbs.db
 .cache/
 .local/
 
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
 # agent binaries ship with the deployment (built by agent/scripts/build-agent.sh)
 !agent/dist
+!agent/dist/**

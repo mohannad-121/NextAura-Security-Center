@@ -1,0 +1,43 @@
+name: Database migration validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "supabase/**"
+      - "lib/db/**"
+      - ".github/workflows/database-validation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/**"
+      - "lib/db/**"
+      - ".github/workflows/database-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-validation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.0
+      - name: Start isolated local Supabase
+        run: supabase start
+      - name: Rebuild from migrations
+        run: supabase db reset --local --no-seed
+      - name: Lint public schema
+        run: supabase db lint --local --schema public --level error --fail-on error
+      - name: Run database security integration tests
+        run: supabase test db --local supabase/tests/database/security.test.sql
+      - name: Stop isolated local Supabase
+        if: always()
+        run: supabase stop --no-backup

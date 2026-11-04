@@ -1,5 +1,4 @@
 import { defineConfig } from "drizzle-kit";
-import path from "path";
 
 const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
 if (!url) {
@@ -7,7 +6,7 @@ if (!url) {
 }
 
 export default defineConfig({
-  schema: path.join(__dirname, "./src/schema/index.ts"),
+  schema: "./src/schema/*.ts",
   dialect: "postgresql",
-  dbCredentials: { url, ssl: process.env.SUPABASE_DB_URL ? { rejectUnauthorized: false } : undefined },
+  dbCredentials: { url },
 });

@@ -1,6 +1,26 @@
 {
+  "schemaVersion": 2,
   "version": "0.1.0",
-  "builtAt": "2026-11-04T14:09:05Z",
-  "verified": {},
-  "signed": {}
+  "builtAt": "2026-11-04T22:11:47Z",
+  "buildSetId": "0f17981de9f733271611fd0a564448c6c2672976f16228c6c67c2e34104611b1",
+  "artifacts": {
+    "darwin-amd64": {
+      "fileName": "nextaura-agent-darwin-amd64.tar.gz",
+      "sha256": "7e0536b0044588ea2bfc9373d5ba96c41b8d717362ae6fa1d336039b24037640",
+      "buildId": "9df01c5b66d1ad2b4652d9b4bcce4c671fb03a580491a660b16614fd61b42715",
+      "nativeVerification": null
+    },
+    "darwin-arm64": {
+      "fileName": "nextaura-agent-darwin-arm64.tar.gz",
+      "sha256": "6063fd467f0ffc098a97c162aeb5204b0756b92354648aef4cb693e0127b8074",
+      "buildId": "61af28a884edef3058f42cc447206ef04f306e6564cf327477808393f5b13266",
+      "nativeVerification": null
+    },
+    "windows-amd64": {
+      "fileName": "nextaura-agent-windows-amd64.zip",
+      "sha256": "16588e1b4c78131f05c6b351b74653daa2f4130a5b2a66e6bf47b92cd051161e",
+      "buildId": "d8cb7829ba26b9e109012a7136dec0f526a93b250ec1d8cce66a70325f8a6d4e",
+      "nativeVerification": null
+    }
+  }
 }
