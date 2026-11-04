@@ -172,17 +172,7 @@ func macSecurityPosture(ctx context.Context, r *model.CollectorResult) error {
 	if v, err := run(ctx, 10*time.Second, "sw_vers", "-productVersion"); err != nil {
 		r.Checks = append(r.Checks, classify(osc, err))
 	} else {
-		major, _ := strconv.Atoi(strings.Split(v, ".")[0])
-		switch {
-		case major == 0:
-			r.Checks = append(r.Checks, osc.unknown("Could not parse version "+v))
-		case major >= 14:
-			r.Checks = append(r.Checks, osc.pass(fmt.Sprintf("macOS %s (major %d) is within Apple's current three supported releases", v, major)))
-		case major == 13:
-			r.Checks = append(r.Checks, osc.warn(fmt.Sprintf("macOS %s (Ventura) is at or near end of security updates; plan an upgrade", v)))
-		default:
-			r.Checks = append(r.Checks, osc.fail(fmt.Sprintf("macOS %s no longer receives security updates", v)))
-		}
+		r.Checks = append(r.Checks, macOSSupportCheck(osc, v))
 	}
 
 	// Screen lock: askForPassword / delay (current user)
@@ -231,7 +221,7 @@ func macSecurityPosture(ctx context.Context, r *model.CollectorResult) error {
 	} else if out == "1" {
 		r.Checks = append(r.Checks, ga.fail("GuestEnabled=1"))
 	} else {
-		r.Checks = append(r.Checks, ga.pass("GuestEnabled=" + out))
+		r.Checks = append(r.Checks, ga.pass("GuestEnabled="+out))
 	}
 
 	// Remote Login (SSH) and Screen Sharing
@@ -255,6 +245,23 @@ func macSecurityPosture(ctx context.Context, r *model.CollectorResult) error {
 	return nil
 }
 
+func macOSSupportCheck(b checkBuilder, version string) model.Check {
+	major, _ := strconv.Atoi(strings.Split(version, ".")[0])
+	switch major {
+	case 27, 26, 15:
+		return b.pass(fmt.Sprintf("macOS %s is one of the releases receiving Apple security updates as of 2026-11-04", version))
+	case 0:
+		return b.unknown("Could not parse version " + version)
+	case 14:
+		return b.fail(fmt.Sprintf("macOS %s (Sonoma) is no longer among Apple's three actively updated releases; upgrade", version))
+	default:
+		if major > 27 {
+			return b.unknown(fmt.Sprintf("macOS %s is newer than this agent's 2026-11-04 support table; verify Apple security-update status", version))
+		}
+		return b.fail(fmt.Sprintf("macOS %s no longer receives routine Apple security updates", version))
+	}
+}
+
 func macAntivirus(ctx context.Context, r *model.CollectorResult) error {
 	av := &model.Antivirus{Status: "UNKNOWN", RealTimeProtection: model.StatusUnknown}
 	prod := ck("AV_PRODUCT", "ANTIVIRUS", "Endpoint protection product installed", "/Applications bundle scan + XProtect", "Standard user")
@@ -262,18 +269,18 @@ func macAntivirus(ctx context.Context, r *model.CollectorResult) error {
 	defs := ck("AV_DEFINITIONS", "ANTIVIRUS", "Apple XProtect definitions present and recent", "XProtect bundle Info.plist", "Standard user")
 
 	known := map[string]string{
-		"CrowdStrike Falcon":      "/Applications/Falcon.app",
-		"SentinelOne":             "/Applications/SentinelOne/SentinelOne Extensions.app",
-		"Microsoft Defender":      "/Applications/Microsoft Defender.app",
-		"Sophos Endpoint":         "/Applications/Sophos/Sophos Endpoint.app",
-		"Bitdefender Endpoint":    "/Applications/Endpoint Security for Mac.app",
-		"ESET Endpoint Security":  "/Applications/ESET Endpoint Security.app",
-		"Malwarebytes":            "/Applications/Malwarebytes.app",
-		"Jamf Protect":            "/Applications/JamfProtect.app",
-		"Avast Security":          "/Applications/Avast.app",
-		"Norton 360":              "/Applications/Norton 360.app",
-		"Kaspersky":               "/Applications/Kaspersky Internet Security.app",
-		"Trend Micro Antivirus":   "/Applications/Trend Micro Antivirus.app",
+		"CrowdStrike Falcon":     "/Applications/Falcon.app",
+		"SentinelOne":            "/Applications/SentinelOne/SentinelOne Extensions.app",
+		"Microsoft Defender":     "/Applications/Microsoft Defender.app",
+		"Sophos Endpoint":        "/Applications/Sophos/Sophos Endpoint.app",
+		"Bitdefender Endpoint":   "/Applications/Endpoint Security for Mac.app",
+		"ESET Endpoint Security": "/Applications/ESET Endpoint Security.app",
+		"Malwarebytes":           "/Applications/Malwarebytes.app",
+		"Jamf Protect":           "/Applications/JamfProtect.app",
+		"Avast Security":         "/Applications/Avast.app",
+		"Norton 360":             "/Applications/Norton 360.app",
+		"Kaspersky":              "/Applications/Kaspersky Internet Security.app",
+		"Trend Micro Antivirus":  "/Applications/Trend Micro Antivirus.app",
 	}
 	var found []string
 	for name, p := range known {

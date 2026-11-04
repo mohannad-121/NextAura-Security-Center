@@ -4,7 +4,7 @@
  * with per-device tokens, not with the operator's session.
  */
 import { z } from "zod";
-import { COLLECTOR_IDS } from "@workspace/db";
+import { COLLECTOR_IDS } from "@workspace/db/schema";
 
 export const collectorIdSchema = z.enum(COLLECTOR_IDS);
 export const osTypeSchema = z.enum(["WINDOWS", "MACOS"]);
@@ -62,7 +62,15 @@ export const systemInfoSchema = z.object({
 
 export const antivirusSchema = z.object({
   product: shortStr(160).nullable(),
-  status: z.enum(["ACTIVE", "DISABLED", "PASSIVE", "THIRD_PARTY", "UNKNOWN", "UNSUPPORTED", "PERMISSION_DENIED"]),
+  status: z.enum([
+    "ACTIVE",
+    "DISABLED",
+    "PASSIVE",
+    "THIRD_PARTY",
+    "UNKNOWN",
+    "UNSUPPORTED",
+    "PERMISSION_DENIED",
+  ]),
   realTimeProtection: checkStatusSchema,
   definitionsAgeDays: z.number().int().nonnegative().nullable(),
   lastDefinitionUpdate: isoDate.nullable(),
@@ -133,7 +141,13 @@ export const heartbeatBodySchema = z.object({
   timestamp: isoDate,
   uptimeSeconds: z.number().int().nonnegative().nullable().optional(),
   collectorErrors: z
-    .array(z.object({ collectorId: collectorIdSchema, message: shortStr(500), occurredAt: isoDate }))
+    .array(
+      z.object({
+        collectorId: collectorIdSchema,
+        message: shortStr(500),
+        occurredAt: isoDate,
+      }),
+    )
     .max(50)
     .default([]),
 });

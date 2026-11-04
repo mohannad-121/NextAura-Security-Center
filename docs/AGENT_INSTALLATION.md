@@ -1,45 +1,72 @@
 # Agent installation
 
-The agent is a single binary with no dependencies. Enrollment requires a one-time code generated in **Devices → Enroll device** by an ADMIN or OWNER.
+The enrollment wizard serves complete, architecture-specific install packages only after a release operator records a successful native test enrollment in `agent/dist/manifest.json`. A package that merely exists is not downloadable.
 
-## Windows (x64)
+Before installing, the device user must review the consent notice, confirm the canonical HTTPS server URL, and compare the package SHA-256 with the value displayed by the wizard.
 
-1. Download `nextaura-agent-windows-amd64.exe` from the enrollment wizard (compare the SHA-256 shown) or build it with `agent\scripts\build-agent.ps1`.
-2. Open an **elevated** PowerShell and copy the binary to `C:\Program Files\NextAura\nextaura-agent.exe`.
-3. Enroll:
+## Windows x64
+
+1. Download and extract `nextaura-agent-windows-amd64.zip`.
+2. Open PowerShell with **Run as administrator** in the extracted directory.
+3. Run the exact command displayed by the enrollment wizard:
+
    ```powershell
-   & "C:\Program Files\NextAura\nextaura-agent.exe" enroll --server https://<your-server> --code XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
+   .\install-agent.ps1 -ServerUrl "https://security.example.com" -EnrollmentCode "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
    ```
-   This collects system identification, registers the device and uploads the first assessment.
-4. Install the service (runs as LocalSystem so BitLocker and Secure Boot can be read):
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File agent\scripts\install-service-windows.ps1
+
+The installer copies the binary to `C:\Program Files\NextAura`, restricts `C:\ProgramData\NextAura\Agent` to LocalSystem and Administrators, redeems the one-time code, uploads the initial assessment, creates the visible `NextAuraAgent` service, and starts it. It does not disable Defender, change firewall rules, or modify security settings.
+
+Diagnostics:
+
+```powershell
+Get-Service NextAuraAgent
+& "C:\Program Files\NextAura\nextaura-agent.exe" status
+Get-Content "C:\ProgramData\NextAura\Agent\agent.log" -Tail 100
+```
+
+Uninstall: first revoke the device in the dashboard, then run `uninstall-agent.ps1` as administrator. It preserves local state by default. Use `-RemoveLocalState` only after revocation.
+
+## macOS Intel and Apple silicon
+
+Choose `darwin-amd64` for an Intel Mac or `darwin-arm64` for Apple silicon. Confirm the chip in **Apple menu → About This Mac**; browsers cannot reliably detect Mac CPU architecture.
+
+1. Download and extract the matching `.tar.gz` package.
+2. Open Terminal in the extracted directory.
+3. Run the exact command displayed by the wizard:
+
+   ```bash
+   sudo ./install-agent.sh --server 'https://security.example.com' --code 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'
    ```
-5. State and logs: `C:\ProgramData\NextAura\Agent\`.
 
-Running without elevation works but BitLocker, Secure Boot and some AV details will be reported as `PERMISSION_DENIED`.
+The installer copies the binary to `/usr/local/bin`, protects `/Library/Application Support/NextAura/Agent`, enrolls and assesses the device, installs `com.nextaura.agent.plist`, and starts a LaunchDaemon. It does not bypass Gatekeeper, SIP, TCC, or Full Disk Access.
 
-## macOS (Intel and Apple silicon)
+Diagnostics:
 
-1. Download the matching binary (`darwin-arm64` for Apple silicon, `darwin-amd64` for Intel) or build with `./agent/scripts/build-agent.sh`.
-2. `chmod +x nextaura-agent && sudo ./nextaura-agent enroll --server https://<your-server> --code ...`
-3. `sudo ./agent/scripts/install-service-macos.sh ./nextaura-agent` installs `/usr/local/bin/nextaura-agent` and the LaunchDaemon `com.nextaura.agent`.
-4. State and logs: `/Library/Application Support/NextAura/Agent/`.
+```bash
+sudo launchctl print system/com.nextaura.agent
+sudo /usr/local/bin/nextaura-agent status
+sudo tail -100 '/Library/Application Support/NextAura/Agent/launchd.err.log'
+```
 
-Binaries are not notarized by default. Gatekeeper may require `xattr -d com.apple.quarantine nextaura-agent` for a downloaded file, or sign/notarize with your own Developer ID and set `signed.<platform>: true` in `manifest.json`.
+Uninstall: first revoke the device in the dashboard, then run `sudo ./uninstall-agent.sh`. It preserves local state by default. Add `--remove-local-state` only after revocation.
 
-## Commands
+## Signing and notarization
 
-| Command | Description |
-|---|---|
-| `enroll --server --code` | Register this device (one time) |
-| `run` | Foreground service loop (used by the service/daemon) |
-| `assess [--collectors A,B]` | Run collectors now and upload |
-| `collect [--collectors A,B]` | Run collectors and print JSON locally — useful to see exactly what would be sent |
-| `status` | Show enrollment (token redacted) |
-| `unenroll` | Delete local token (revoke in the dashboard too) |
+The checked-in packages are development artifacts and the current manifest marks them unsigned/unverified. Never present them as production-trusted installers.
 
-## Uninstall
+- Windows production distribution requires an organization-controlled code-signing certificate and Authenticode signing, for example `signtool sign /fd SHA256 /td SHA256 /tr <trusted-RFC3161-timestamp-url> /sha1 <certificate-thumbprint> <binary>`, followed by `signtool verify /pa /v <binary>`.
+- macOS production distribution should use a signed installer package (`productbuild --sign "Developer ID Installer: ..."`), a Developer ID Application-signed binary with hardened runtime and secure timestamp (`codesign --options runtime --timestamp --sign "Developer ID Application: ..."`), Apple notarization (`xcrun notarytool submit ... --keychain-profile ... --wait`), and stapling/validation (`xcrun stapler staple` and `xcrun stapler validate`) on a supported staplable container.
+- Signing identities and notarization credentials must live in protected CI secrets/keychains. They are not present in this repository.
 
-Windows: `Stop-Service NextAuraAgent; sc.exe delete NextAuraAgent`, delete the binary and `C:\ProgramData\NextAura`.
-macOS: `sudo launchctl bootout system/com.nextaura.agent`, remove the plist, binary and state directory. Then revoke the device in the dashboard.
+Do not remove quarantine attributes or instruct users to bypass OS security warnings.
+
+## Agent commands
+
+| Command                      | Description                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| `enroll --server --code`     | Redeem a one-time code and store a per-device token        |
+| `run`                        | Foreground service loop                                    |
+| `assess [--collectors A,B]`  | Run fixed collectors and upload                            |
+| `collect [--collectors A,B]` | Print fixed collector results locally without upload       |
+| `status`                     | Show enrollment with token redacted                        |
+| `unenroll`                   | Remove only the local token; server revocation is separate |

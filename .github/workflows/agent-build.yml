@@ -1,0 +1,109 @@
+name: Agent build validation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent-build.yml"
+  pull_request:
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent-build.yml"
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.22.x"
+
+jobs:
+  windows-amd64:
+    name: Windows amd64 package
+    runs-on: windows-2025
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: agent/go.mod
+      - name: Verify module and tests natively
+        shell: pwsh
+        run: |
+          go mod verify
+          go test ./...
+          $unformatted = @(gofmt -l .)
+          if ($unformatted.Count -gt 0) {
+            throw "gofmt required: $($unformatted -join ', ')"
+          }
+      - name: Build, execute entry point, and package
+        shell: pwsh
+        run: .\scripts\build-agent.ps1
+      - name: Record checksum and signing status
+        shell: pwsh
+        run: |
+          $package = 'dist\nextaura-agent-windows-amd64.zip'
+          (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + (Split-Path $package -Leaf) | Set-Content "$package.sha256" -Encoding ascii
+          Get-AuthenticodeSignature 'dist\nextaura-agent-windows-amd64.exe' | Format-List Status,StatusMessage
+      - name: Upload development artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: nextaura-agent-windows-amd64-development
+          path: |
+            agent/dist/nextaura-agent-windows-amd64.zip
+            agent/dist/nextaura-agent-windows-amd64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    name: macOS ${{ matrix.arch }} package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: macos-15-intel
+            native_machine: x86_64
+          - arch: arm64
+            runner: macos-15
+            native_machine: arm64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: agent/go.mod
+      - name: Confirm native runner architecture
+        shell: bash
+        run: test "$(uname -m)" = "${{ matrix.native_machine }}"
+      - name: Verify module and tests natively
+        shell: bash
+        run: |
+          go mod verify
+          go test ./...
+          test -z "$(gofmt -l .)"
+      - name: Build and package
+        shell: bash
+        run: ./scripts/build-agent.sh darwin-${{ matrix.arch }}
+      - name: Execute native entry point and record trust state
+        shell: bash
+        run: |
+          ./dist/nextaura-agent-darwin-${{ matrix.arch }} version
+          shasum -a 256 "dist/nextaura-agent-darwin-${{ matrix.arch }}.tar.gz" > "dist/nextaura-agent-darwin-${{ matrix.arch }}.tar.gz.sha256"
+          codesign --verify --deep --strict "dist/nextaura-agent-darwin-${{ matrix.arch }}" || echo "Unsigned development build; production signing/notarization is a separate controlled step."
+      - name: Upload development artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: nextaura-agent-darwin-${{ matrix.arch }}-development
+          path: |
+            agent/dist/nextaura-agent-darwin-${{ matrix.arch }}.tar.gz
+            agent/dist/nextaura-agent-darwin-${{ matrix.arch }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -8,19 +8,20 @@ const { Pool } = pg;
  * SUPABASE_DB_URL (the customer's Supabase Postgres) takes precedence over the
  * platform-provisioned DATABASE_URL so the same code runs against either.
  */
-const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+const connectionString =
+  process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
 if (!connectionString) {
   throw new Error("SUPABASE_DB_URL or DATABASE_URL must be set.");
 }
 
-export const databaseProvider: "supabase" | "replit" = process.env.SUPABASE_DB_URL
+export const databaseProvider: "supabase" | "replit" = process.env
+  .SUPABASE_DB_URL
   ? "supabase"
   : "replit";
 
 export const pool = new Pool({
   connectionString,
   max: 8,
-  ssl: process.env.SUPABASE_DB_URL ? { rejectUnauthorized: false } : undefined,
 });
 export const db = drizzle(pool, { schema });
 

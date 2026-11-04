@@ -51,7 +51,22 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // Agent API: device-token auth, no Clerk, strict body limit, no CORS needed.
 app.use("/api/agent/v1", express.json({ limit: "2mb" }), agentRouter);
 
-app.use(cors({ credentials: true, origin: true }));
+const allowedOrigins = new Set(
+  (process.env.APP_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
+if (allowedOrigins.size > 0) {
+  app.use(
+    cors({
+      credentials: true,
+      origin(origin, callback) {
+        callback(null, !origin || allowedOrigins.has(origin));
+      },
+    }),
+  );
+}
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true }));
 
