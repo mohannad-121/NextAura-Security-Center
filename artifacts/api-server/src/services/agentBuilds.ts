@@ -2,7 +2,22 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
-export const AGENT_DIST_DIR = process.env.AGENT_DIST_DIR ?? path.resolve(process.cwd(), "../../agent/dist");
+import { existsSync } from "node:fs";
+
+/**
+ * Locate agent/dist. In development the server's cwd is artifacts/api-server;
+ * in production it is the repository root. Check both plus the env override.
+ */
+function resolveDistDir(): string {
+  const candidates = [
+    process.env.AGENT_DIST_DIR,
+    path.resolve(process.cwd(), "agent/dist"),
+    path.resolve(process.cwd(), "../../agent/dist"),
+  ].filter((c): c is string => !!c);
+  return candidates.find((c) => existsSync(c)) ?? candidates[candidates.length - 1]!;
+}
+
+export const AGENT_DIST_DIR = resolveDistDir();
 
 const PLATFORMS = [
   { platform: "windows-amd64", osType: "WINDOWS", architecture: "amd64", fileName: "nextaura-agent-windows-amd64.exe" },
