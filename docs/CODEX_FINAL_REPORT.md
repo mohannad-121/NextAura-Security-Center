@@ -52,6 +52,7 @@ A second Windows-only runtime defect would have appeared after enrollment: `os.R
 | HIGH     | Rebuilds inherited editable verification/signing booleans from previous artifacts    | Fixed; rebuilds clear approvals and runtime approval is bound to exact SHA-256 plus build identity                                 |
 | HIGH     | Enrollment codes appeared in shell history and process arguments                     | Fixed; installers request hidden input and pass the code to the agent only over stdin                                              |
 | HIGH     | Checked-in macOS archives could lack executable mode bits when packaged on Windows   | Fixed in artifacts and enforced by native CI extraction checks                                                                     |
+| MEDIUM   | GNU-only tar mode flags failed on GitHub's BSD-tar macOS runners                      | Fixed with GNU/BSD portable archive-mode handling                                                                                   |
 | MEDIUM   | Windows CI treated checkout CRLF as unformatted Go source                            | Fixed with repository LF attributes for Go/shell/workflow files                                                                    |
 | MEDIUM   | Rate limits are process-local                                                        | Open; requires edge or shared-store enforcement before horizontal production scaling                                               |
 | LOW      | Enrollment alphabet modulo bias was suspected                                        | Closed as not a defect: the alphabet contains exactly 32 symbols                                                                   |
@@ -159,13 +160,13 @@ The production build emits a non-fatal warning for a roughly 1.07 MB minified da
 | ------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
 | `nextaura-agent-windows-amd64.zip`   | `16588e1b4c78131f05c6b351b74653daa2f4130a5b2a66e6bf47b92cd051161e` | cross-built; unsigned; native execution and enrollment unverified            |
 | `nextaura-agent-darwin-amd64.tar.gz` | `7e0536b0044588ea2bfc9373d5ba96c41b8d717362ae6fa1d336039b24037640` | cross-built; executable archive modes verified; native execution unverified |
-| `nextaura-agent-darwin-arm64.tar.gz` | `3a6385a3ba6efba0928adba0b29f370e59d96db3d80dd0b6ba3ed60a30889402` | cross-built; executable archive modes verified; native execution unverified |
+| `nextaura-agent-darwin-arm64.tar.gz` | `6063fd467f0ffc098a97c162aeb5204b0756b92354648aef4cb693e0127b8074` | cross-built; executable archive modes verified; native execution unverified |
 
 `agent/dist/manifest.json` uses schema version 2. Each artifact records its generated SHA-256 and deterministic build identity with `nativeVerification: null`. Rebuilds always reset that field. The API recomputes both values and ignores legacy booleans; it exposes no download path until a matching native-test record exists. It always reports signing as false because editable metadata is not cryptographic evidence.
 
 ## 11. Native OS testing status
 
-- Windows amd64: compiled, unit-tested, vetted, and the final executable's entry point ran natively. No administrator service installation or real enrollment was performed because no disposable elevated endpoint and migrated staging backend were available.
+- Windows amd64: compiled, unit-tested, and vetted. Windows Application Control blocked the rebuilt final executable's entry point, and that policy was not bypassed. No administrator service installation or real enrollment was performed because no disposable elevated endpoint and migrated staging backend were available.
 - macOS Intel/arm64: compiled by Go cross-build only in this environment. The workflow uses native Intel and Apple-silicon GitHub runners for tests, build, and entry-point execution. Real launchd installation, enrollment, restart, uninstall, Developer ID signing, notarization, and stapling remain unverified.
 
 ## 12. Remaining limitations and recommendations

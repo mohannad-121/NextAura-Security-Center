@@ -28,11 +28,17 @@ for t in $TARGETS; do
     cp scripts/uninstall-agent-macos.sh "$stage/uninstall-agent.sh"
     cp scripts/com.nextaura.agent.plist "$stage/com.nextaura.agent.plist"
     cp scripts/PACKAGE_README.txt "$stage/README.txt"
-    raw_tar=$(mktemp)
-    tar --mode=0755 -C "$stage" -cf "$raw_tar" nextaura-agent install-agent.sh uninstall-agent.sh
-    tar --mode=0644 -C "$stage" -rf "$raw_tar" com.nextaura.agent.plist README.txt
-    gzip -n "$raw_tar"
-    mv -f "$raw_tar.gz" "dist/nextaura-agent-$t.tar.gz"
+    if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+      raw_tar=$(mktemp)
+      tar --mode=0755 -C "$stage" -cf "$raw_tar" nextaura-agent install-agent.sh uninstall-agent.sh
+      tar --mode=0644 -C "$stage" -rf "$raw_tar" com.nextaura.agent.plist README.txt
+      gzip -n "$raw_tar"
+      mv -f "$raw_tar.gz" "dist/nextaura-agent-$t.tar.gz"
+    else
+      chmod 0755 "$stage/nextaura-agent" "$stage/install-agent.sh" "$stage/uninstall-agent.sh"
+      chmod 0644 "$stage/com.nextaura.agent.plist" "$stage/README.txt"
+      tar -C "$stage" -czf "dist/nextaura-agent-$t.tar.gz" .
+    fi
   fi
   rm -rf "$stage"
 done
