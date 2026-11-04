@@ -2,6 +2,7 @@
 
 # compiled output
 dist
+!agent/dist
 tmp
 out-tsc
 *.tsbuildinfo
@@ -54,6 +55,5 @@ Thumbs.db
 .cache/
 .local/
 
-# agent binaries are built per deployment, never committed
-agent/dist/*
-!agent/dist/.gitkeep
+# agent binaries ship with the deployment (built by agent/scripts/build-agent.sh)
+!agent/dist

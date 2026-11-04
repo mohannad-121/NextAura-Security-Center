@@ -9,7 +9,7 @@ Read-only, multi-tenant endpoint security assessment SaaS for SMBs: a Go agent o
 - `pnpm run typecheck` / `pnpm run typecheck:libs` (run libs first; artifacts depend on built lib d.ts)
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate hooks/Zod from `lib/api-spec/openapi.yaml`
 - `pnpm --filter @workspace/db run push` — apply schema to Supabase (`SUPABASE_DB_URL`, falls back to `DATABASE_URL`)
-- `./agent/scripts/build-agent.sh` — builds agent binaries into `agent/dist` (gitignored); `cd agent && go test ./...`
+- `./agent/scripts/build-agent.sh` — builds agent binaries into `agent/dist` (committed so they ship with the deployment); `cd agent && go test ./...`
 - Env: see `.env.example`. Secrets: `SUPABASE_DB_URL`, `CLERK_*`, optional `NVD_API_KEY`.
 
 ## Stack

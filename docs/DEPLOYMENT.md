@@ -10,7 +10,7 @@
 
 1. `pnpm install`
 2. `pnpm --filter @workspace/db run push` (or generate migrations with `drizzle-kit generate` for controlled rollouts).
-3. Build agent binaries on a machine with Go 1.22+: `./agent/scripts/build-agent.sh`. Copy `agent/dist/*` to the server (or set `AGENT_DIST_DIR`). Until a binary exists the enrollment wizard shows "No binary has been built on this server" and offers the source-build command instead.
+3. Build agent binaries on a machine with Go 1.22+: `./agent/scripts/build-agent.sh`. The binaries in `agent/dist` are committed and ship with the deployment (or set `AGENT_DIST_DIR`). Until a binary exists the enrollment wizard shows "No binary has been built on this server" and offers the source-build command instead.
 4. After a successful test enrollment from a real device, set `verified.<platform>: true` in `agent/dist/manifest.json` so the wizard stops labelling the build as untested.
 5. Start the API (`pnpm --filter @workspace/api-server run dev` builds and runs `dist/index.mjs`; it reads `PORT`) and the web app.
 6. Put both behind HTTPS. The agent refuses non-HTTPS servers.
