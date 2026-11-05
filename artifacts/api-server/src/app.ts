@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
@@ -8,10 +8,43 @@ import {
   clerkProxyMiddleware,
   getClerkProxyHost,
 } from "./middlewares/clerkProxyMiddleware";
-import router from "./routes";
-import agentRouter from "./routes/agent";
+import healthRouter from "./routes/health";
 import { logger } from "./lib/logger";
 import { errorHandler } from "./middlewares/errorHandler";
+import {
+  missingDatabaseConfiguration,
+  missingOperatorConfiguration,
+  requireRuntimeConfiguration,
+} from "./lib/runtimeConfiguration";
+
+function lazyRouter(
+  load: () => Promise<{ default: RequestHandler }>,
+): RequestHandler {
+  let pending: Promise<RequestHandler> | undefined;
+  return async (req, res, next) => {
+    try {
+      pending ??= load().then((module) => module.default);
+      const router = await pending;
+      router(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+const agentRouter = lazyRouter(() => import("./routes/agent"));
+const operatorRouter = lazyRouter(() => import("./routes"));
+
+let operatorAuth: RequestHandler | undefined;
+const operatorAuthMiddleware: RequestHandler = (req, res, next) => {
+  operatorAuth ??= clerkMiddleware((request) => ({
+    publishableKey: publishableKeyFromHost(
+      getClerkProxyHost(request) ?? "",
+      process.env.CLERK_PUBLISHABLE_KEY,
+    ),
+  }));
+  operatorAuth(req, res, next);
+};
 
 const app: Express = express();
 app.set("trust proxy", true);
@@ -48,8 +81,17 @@ app.use((_req, res, next) => {
 
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
+// Liveness stays available without staging credentials. Every dependent route
+// below fails closed with a 503 until its required variable names are present.
+app.use("/api", healthRouter);
+
 // Agent API: device-token auth, no Clerk, strict body limit, no CORS needed.
-app.use("/api/agent/v1", express.json({ limit: "2mb" }), agentRouter);
+app.use(
+  "/api/agent/v1",
+  requireRuntimeConfiguration(missingDatabaseConfiguration),
+  express.json({ limit: "2mb" }),
+  agentRouter,
+);
 
 const allowedOrigins = new Set(
   (process.env.APP_ORIGINS ?? "")
@@ -70,22 +112,15 @@ if (allowedOrigins.size > 0) {
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Resolve the publishable key from the incoming request host so the same
-// server can serve multiple Clerk custom domains. Falls back to
-// CLERK_PUBLISHABLE_KEY when the host doesn't map to a custom domain.
-//
-// getClerkProxyHost is shared with clerkProxyMiddleware so that both
-// halves of the auth setup agree on which hostname is canonical.
+// Resolve Clerk only after configuration validation. This keeps the function
+// importable for liveness checks and produces a deterministic 503 rather than
+// a cold-start crash when isolated staging credentials have not been set.
 app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
+  "/api",
+  requireRuntimeConfiguration(missingOperatorConfiguration),
+  operatorAuthMiddleware,
+  operatorRouter,
 );
-
-app.use("/api", router);
 
 app.use(errorHandler);
 

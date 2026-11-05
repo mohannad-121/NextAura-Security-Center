@@ -84,6 +84,16 @@ type ArchiveSummary struct {
 	TotalCompressedBytes   uint64         `json:"totalCompressedBytes"`
 	TotalUncompressedBytes uint64         `json:"totalUncompressedBytes"`
 	InspectionTruncated    bool           `json:"inspectionTruncated"`
+	NestedInspectedCount   int            `json:"nestedInspectedCount"`
+	NestedSkippedCount     int            `json:"nestedSkippedCount"`
+}
+
+type PESummary struct {
+	Machine                    string   `json:"machine"`
+	SectionCount               int      `json:"sectionCount"`
+	ImportedSymbols            []string `json:"importedSymbols"`
+	WritableExecutableSections []string `json:"writableExecutableSections"`
+	TimeDateStamp              uint32   `json:"timeDateStamp"`
 }
 
 type Result struct {
@@ -96,6 +106,7 @@ type Result struct {
 	Classification    string          `json:"classification"`
 	Indicators        []Indicator     `json:"indicators"`
 	Archive           *ArchiveSummary `json:"archive,omitempty"`
+	PE                *PESummary      `json:"pe,omitempty"`
 	Limitations       []string        `json:"limitations"`
 }
 
@@ -158,6 +169,14 @@ func Analyze(ctx context.Context, path string, opts Options) (*Result, error) {
 		return nil, err
 	}
 	defer f.Close()
+	openedInfo, err := f.Stat()
+	if err != nil || !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+		return nil, errors.New("target changed between validation and open")
+	}
+	resolvedAfterOpen, err := filepath.EvalSymlinks(target)
+	if err != nil || !sameResolvedPath(realTarget, resolvedAfterOpen) {
+		return nil, errors.New("target resolution changed during validation")
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, &contextReader{ctx: ctx, r: io.LimitReader(f, limits.MaxFileBytes+1)}); err != nil {
 		return nil, err
@@ -195,15 +214,20 @@ func Analyze(ctx context.Context, path string, opts Options) (*Result, error) {
 
 	switch typ {
 	case "ZIP":
-		a, indicators, limitations := inspectZIP(target, limits)
+		a, indicators, limitations := inspectZIP(ctx, f, info.Size(), limits)
 		r.Archive = a
 		r.Indicators = append(r.Indicators, indicators...)
 		r.Limitations = append(r.Limitations, limitations...)
 	case "ISO9660":
-		r.Classification = maxClass(r.Classification, Inconclusive)
-		r.Limitations = append(r.Limitations, "ISO image detected but not mounted or traversed; only container metadata was inspected.")
+		isoSummary, isoIndicators, isoLimitations := inspectISO9660(f, limits)
+		r.Archive = isoSummary
+		r.Indicators = append(r.Indicators, isoIndicators...)
+		r.Limitations = append(r.Limitations, isoLimitations...)
 	case "PE_EXECUTABLE", "PE_DLL":
-		r.SignatureMetadata = peSignatureMetadata(target)
+		r.SignatureMetadata = peSignatureMetadata(f)
+		peSummary, peIndicators := inspectPE(f)
+		r.PE = peSummary
+		r.Indicators = append(r.Indicators, peIndicators...)
 		if r.SignatureMetadata == "NOT_PRESENT" {
 			r.add("PE_SIGNATURE_ABSENT", SuspiciousIndicator, "MEDIUM", "PE certificate table is absent; this is not proof of malware.")
 		}
@@ -215,6 +239,127 @@ func Analyze(ctx context.Context, path string, opts Options) (*Result, error) {
 		r.Classification = maxClass(r.Classification, i.Classification)
 	}
 	return r, nil
+}
+
+func inspectISO9660(f *os.File, limits Limits) (*ArchiveSummary, []Indicator, []string) {
+	const sector = int64(2048)
+	pvd := make([]byte, sector)
+	if _, err := f.ReadAt(pvd, 16*sector); err != nil || len(pvd) < 190 || string(pvd[1:6]) != "CD001" {
+		return nil, []Indicator{{"ISO_PARSE_FAILED", Inconclusive, "MEDIUM", "ISO9660 primary volume descriptor could not be parsed."}}, []string{"Unsupported or malformed ISO variants remain uninspected."}
+	}
+	type directory struct {
+		extent, size uint32
+		depth        int
+	}
+	rootRecord := pvd[156:]
+	if len(rootRecord) < 34 {
+		return nil, []Indicator{{"ISO_ROOT_MISSING", Inconclusive, "MEDIUM", "ISO9660 root directory record is missing."}}, nil
+	}
+	readLE := func(b []byte) uint32 { return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24 }
+	queue := []directory{{readLE(rootRecord[2:6]), readLE(rootRecord[10:14]), 0}}
+	summary := &ArchiveSummary{Entries: []ArchiveEntry{}}
+	var indicators []Indicator
+	var limitations []string
+	readBytes := uint64(0)
+	for len(queue) > 0 && summary.EntryCount < limits.MaxArchiveEntries {
+		dir := queue[0]
+		queue = queue[1:]
+		if dir.size == 0 || dir.size > 4<<20 || readBytes+uint64(dir.size) > limits.MaxArchiveUncompressedBytes {
+			summary.InspectionTruncated = true
+			continue
+		}
+		buf := make([]byte, dir.size)
+		if _, err := f.ReadAt(buf, int64(dir.extent)*sector); err != nil {
+			summary.InspectionTruncated = true
+			continue
+		}
+		readBytes += uint64(dir.size)
+		for offset := 0; offset < len(buf) && summary.EntryCount < limits.MaxArchiveEntries; {
+			length := int(buf[offset])
+			if length == 0 {
+				offset = ((offset / int(sector)) + 1) * int(sector)
+				continue
+			}
+			if offset+length > len(buf) || length < 34 {
+				summary.InspectionTruncated = true
+				break
+			}
+			record := buf[offset : offset+length]
+			nameLen := int(record[32])
+			if 33+nameLen > len(record) {
+				summary.InspectionTruncated = true
+				break
+			}
+			name := string(record[33 : 33+nameLen])
+			offset += length
+			if name == "\x00" || name == "\x01" {
+				continue
+			}
+			name = strings.TrimSuffix(name, ";1")
+			isDir := record[25]&2 != 0
+			size := readLE(record[10:14])
+			if isDir {
+				if dir.depth < 2 {
+					queue = append(queue, directory{readLE(record[2:6]), size, dir.depth + 1})
+				} else {
+					summary.InspectionTruncated = true
+				}
+				continue
+			}
+			high := highRiskName(name)
+			summary.EntryCount++
+			summary.TotalUncompressedBytes += uint64(size)
+			if high {
+				summary.HighRiskEntryCount++
+			}
+			summary.Entries = append(summary.Entries, ArchiveEntry{Name: truncate(name, 300), UncompressedBytes: uint64(size), HighRiskType: high})
+		}
+	}
+	if summary.EntryCount >= limits.MaxArchiveEntries || len(queue) > 0 {
+		summary.InspectionTruncated = true
+	}
+	if summary.HighRiskEntryCount > 0 {
+		indicators = append(indicators, Indicator{"ISO_HIGH_RISK_CONTENT", SuspiciousIndicator, "HIGH", fmt.Sprintf("Bounded ISO9660 metadata lists %d executable, script, shortcut, installer, or nested disk-image entries.", summary.HighRiskEntryCount)})
+	}
+	limitations = append(limitations, "ISO9660 was parsed read-only without mounting; Joliet, UDF, boot images, file contents, and directory depth beyond two are unsupported.")
+	if summary.InspectionTruncated {
+		indicators = append(indicators, Indicator{"ISO_RESOURCE_LIMIT", Inconclusive, "MEDIUM", "ISO9660 metadata inspection reached a depth, entry, or byte limit."})
+	}
+	return summary, indicators, limitations
+}
+
+func inspectPE(file io.ReaderAt) (*PESummary, []Indicator) {
+	f, err := pe.NewFile(file)
+	if err != nil {
+		return nil, []Indicator{{"PE_PARSE_FAILED", Inconclusive, "MEDIUM", "PE headers could not be parsed."}}
+	}
+	defer f.Close()
+	summary := &PESummary{Machine: fmt.Sprintf("0x%04x", f.FileHeader.Machine), SectionCount: len(f.Sections), TimeDateStamp: f.FileHeader.TimeDateStamp, ImportedSymbols: []string{}, WritableExecutableSections: []string{}}
+	if symbols, symbolErr := f.ImportedSymbols(); symbolErr == nil {
+		if len(symbols) > 100 {
+			symbols = symbols[:100]
+		}
+		summary.ImportedSymbols = symbols
+	}
+	for _, section := range f.Sections {
+		const executable = 0x20000000
+		const writable = 0x80000000
+		if section.Characteristics&executable != 0 && section.Characteristics&writable != 0 {
+			summary.WritableExecutableSections = append(summary.WritableExecutableSections, section.Name)
+		}
+	}
+	var indicators []Indicator
+	if len(summary.WritableExecutableSections) > 0 {
+		indicators = append(indicators, Indicator{"PE_WRITABLE_EXECUTABLE_SECTION", SuspiciousIndicator, "HIGH", fmt.Sprintf("PE has writable and executable section(s): %s.", strings.Join(summary.WritableExecutableSections, ", "))})
+	}
+	return summary, indicators
+}
+
+func sameResolvedPath(a, b string) bool {
+	if strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) {
+		return true
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 func (r *Result) add(id, classification, severity, evidence string) {
@@ -307,15 +452,18 @@ func archiveName(name string) bool {
 	return false
 }
 
-func inspectZIP(path string, limits Limits) (*ArchiveSummary, []Indicator, []string) {
-	z, err := zip.OpenReader(path)
+func inspectZIP(ctx context.Context, file io.ReaderAt, size int64, limits Limits) (*ArchiveSummary, []Indicator, []string) {
+	z, err := zip.NewReader(file, size)
 	if err != nil {
 		return nil, []Indicator{{"ZIP_PARSE_FAILED", Inconclusive, "MEDIUM", "ZIP metadata could not be parsed: " + err.Error()}}, nil
 	}
-	defer z.Close()
 	a := &ArchiveSummary{Entries: []ArchiveEntry{}}
 	var indicators []Indicator
 	var limitations []string
+	nestedBudget := uint64(64 << 20)
+	if limits.MaxArchiveUncompressedBytes < nestedBudget {
+		nestedBudget = limits.MaxArchiveUncompressedBytes
+	}
 	for idx, f := range z.File {
 		a.EntryCount++
 		a.TotalCompressedBytes += f.CompressedSize64
@@ -330,6 +478,14 @@ func inspectZIP(path string, limits Limits) (*ArchiveSummary, []Indicator, []str
 		}
 		if archiveName(f.Name) {
 			a.NestedArchiveCount++
+			if strings.EqualFold(filepath.Ext(f.Name), ".zip") {
+				inspected, skipped, nestedIndicators := inspectNestedZIP(ctx, f, 1, limits, &nestedBudget)
+				a.NestedInspectedCount += inspected
+				a.NestedSkippedCount += skipped
+				indicators = append(indicators, nestedIndicators...)
+			} else {
+				a.NestedSkippedCount++
+			}
 		}
 		if idx < limits.MaxArchiveEntries {
 			a.Entries = append(a.Entries, ArchiveEntry{truncate(f.Name, 300), f.CompressedSize64, f.UncompressedSize64, encrypted, high})
@@ -358,8 +514,57 @@ func inspectZIP(path string, limits Limits) (*ArchiveSummary, []Indicator, []str
 	return a, dedupe(indicators), limitations
 }
 
-func peSignatureMetadata(path string) string {
-	f, err := pe.Open(path)
+func inspectNestedZIP(ctx context.Context, entry *zip.File, depth int, limits Limits, budget *uint64) (int, int, []Indicator) {
+	const maxDepth = 2
+	const maxNestedBytes = 16 << 20
+	if depth > maxDepth || entry.UncompressedSize64 > maxNestedBytes || entry.UncompressedSize64 > *budget || entry.Flags&1 != 0 {
+		return 0, 1, nil
+	}
+	select {
+	case <-ctx.Done():
+		return 0, 1, nil
+	default:
+	}
+	r, err := entry.Open()
+	if err != nil {
+		return 0, 1, nil
+	}
+	data, readErr := io.ReadAll(io.LimitReader(r, maxNestedBytes+1))
+	_ = r.Close()
+	if readErr != nil || len(data) > maxNestedBytes {
+		return 0, 1, nil
+	}
+	*budget -= uint64(len(data))
+	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return 0, 1, nil
+	}
+	inspected, skipped := 1, 0
+	var indicators []Indicator
+	for index, child := range z.File {
+		if index >= limits.MaxArchiveEntries {
+			skipped += len(z.File) - index
+			break
+		}
+		clean := pathpkg.Clean(strings.ReplaceAll(child.Name, "\\", "/"))
+		if strings.HasPrefix(clean, "../") || pathpkg.IsAbs(clean) || (len(clean) >= 2 && clean[1] == ':') {
+			indicators = append(indicators, Indicator{"NESTED_ARCHIVE_PATH_TRAVERSAL", SuspiciousIndicator, "HIGH", "A bounded nested ZIP contains a path-traversal or absolute entry name."})
+		}
+		if highRiskName(child.Name) {
+			indicators = append(indicators, Indicator{"NESTED_ARCHIVE_HIGH_RISK_CONTENT", SuspiciousIndicator, "HIGH", "A bounded nested ZIP lists an executable, script, shortcut, installer, or disk image."})
+		}
+		if strings.EqualFold(filepath.Ext(child.Name), ".zip") {
+			childInspected, childSkipped, childIndicators := inspectNestedZIP(ctx, child, depth+1, limits, budget)
+			inspected += childInspected
+			skipped += childSkipped
+			indicators = append(indicators, childIndicators...)
+		}
+	}
+	return inspected, skipped, indicators
+}
+
+func peSignatureMetadata(file io.ReaderAt) string {
+	f, err := pe.NewFile(file)
 	if err != nil {
 		return "UNREADABLE"
 	}

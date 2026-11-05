@@ -152,3 +152,11 @@ func (c *Client) SubmitAssessment(ctx context.Context, req model.AssessmentReque
 	}
 	return &out, nil
 }
+
+func (c *Client) SubmitFileEvidence(ctx context.Context, req interface{}) (*model.FileEvidenceResponse, error) {
+	var out model.FileEvidenceResponse
+	if err := c.do(ctx, http.MethodPost, "/file-evidence", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

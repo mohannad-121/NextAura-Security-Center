@@ -4,7 +4,7 @@
 - `NO_FINDINGS_OBSERVED` means only that configured rules found nothing in the evidence that was available.
 - File analysis is static and bounded. It does not execute, emulate, detonate, mount, extract, deobfuscate, or recover passwords.
 - ZIP entry names and sizes can be misleading. Encrypted entries, unsupported compression, malformed archives, and nested containers reduce confidence.
-- ISO images are recognized but not mounted or traversed. ISO contents therefore remain unobserved.
+- ISO9660 directory metadata is inspected to depth two without mounting. Joliet, UDF, boot images and file contents remain unobserved.
 - PE certificate-table presence is metadata, not cryptographic signature validation, chain validation, reputation, or publisher trust.
 - MSI signature validation and LNK target parsing are not implemented.
 - Offline literal rules are YARA-style prototypes, not compatible with the full YARA language and not a substitute for maintained signatures.
@@ -12,6 +12,7 @@
 - No online reputation provider is configured. NextAura never uploads files and does not transmit hashes unless a future integration is explicitly approved and documented.
 - Existing antivirus detections reflect the product's own history and retention. Missing records can result from permissions, retention, product differences, tampering, or an attack the product did not detect.
 - Defender event collection records selected event counts only. It does not ingest command lines, document contents, process memory, or complete event payloads.
+- Code Integrity/AppLocker event counts do not by themselves distinguish Smart App Control, WDAC, AppLocker, SmartScreen or antivirus reputation. Local event details and policy ownership are required.
 - macOS has no stable cross-vendor detection-history API. Third-party console data is unsupported without an approved vendor integration.
 - Startup-location heuristics can produce false positives. Findings require analyst validation and are never auto-remediated.
 - Software-to-CVE matching is subject to inventory naming, version parsing, and cached intelligence freshness.
@@ -19,4 +20,7 @@
 - Real Windows service and macOS launchd installation/enrollment/restart/uninstall testing remains blocked on controlled native endpoints and a staging backend.
 - Checked-in installers are unsigned and unverified; this branch does not rebuild, trust, release, or publish them.
 - The incident dashboard and PDF are implemented but still require staging user-acceptance and accessibility testing.
+- Centralized cancellation prevents work that has not started; it does not force-terminate an already-running bounded local scan.
+- Scope traversal is bounded and skips directory symlinks. Hard-linked files are read-only, but link provenance cannot prove the content originated inside the approved directory.
+- Only the built-in static analyzer can currently submit authenticated file evidence. Full YARA, optional ClamAV, Sysmon and vendor EDR connectors are not implemented or silently installed.
 - Production Supabase was not modified. New migrations must pass review and controlled staging deployment before production consideration.

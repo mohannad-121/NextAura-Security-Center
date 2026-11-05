@@ -14,14 +14,19 @@ if (!connectionString) {
   throw new Error("SUPABASE_DB_URL or DATABASE_URL must be set.");
 }
 
-export const databaseProvider: "supabase" | "replit" = process.env
+export const databaseProvider: "supabase" | "generic" = process.env
   .SUPABASE_DB_URL
   ? "supabase"
-  : "replit";
+  : "generic";
 
 export const pool = new Pool({
   connectionString,
-  max: 8,
+  // A Vercel deployment can scale to multiple instances. Keep each instance's
+  // pool deliberately small and use the Supabase transaction pooler URL.
+  max: process.env.VERCEL ? 2 : 8,
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 30_000,
+  allowExitOnIdle: true,
 });
 export const db = drizzle(pool, { schema });
 

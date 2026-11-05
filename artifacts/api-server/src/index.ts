@@ -2,13 +2,9 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startIntelligenceScheduler } from "./services/vulnerabilities";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+// This launcher is for local development and conventional Node hosting only.
+// Vercel imports src/app.ts directly and never starts a persistent listener.
+const rawPort = process.env["PORT"] ?? "3000";
 
 const port = Number(rawPort);
 

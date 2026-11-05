@@ -149,11 +149,18 @@ type CollectorError struct {
 }
 
 type HeartbeatRequest struct {
-	RequestID       string           `json:"requestId"`
-	AgentVersion    string           `json:"agentVersion"`
-	Timestamp       time.Time        `json:"timestamp"`
-	UptimeSeconds   *int64           `json:"uptimeSeconds,omitempty"`
-	CollectorErrors []CollectorError `json:"collectorErrors"`
+	RequestID       string             `json:"requestId"`
+	AgentVersion    string             `json:"agentVersion"`
+	Timestamp       time.Time          `json:"timestamp"`
+	UptimeSeconds   *int64             `json:"uptimeSeconds,omitempty"`
+	CollectorErrors []CollectorError   `json:"collectorErrors"`
+	ScanScopes      []ScanScopeSummary `json:"scanScopes"`
+}
+
+type ScanScopeSummary struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Enabled bool   `json:"enabled"`
 }
 
 type HeartbeatResponse struct {
@@ -164,7 +171,9 @@ type HeartbeatResponse struct {
 
 type PendingRequest struct {
 	ID         string   `json:"id"`
+	Operation  string   `json:"operation"`
 	Collectors []string `json:"collectors"`
+	ScopeID    *string  `json:"scopeId,omitempty"`
 	ExpiresAt  string   `json:"expiresAt"`
 }
 
@@ -194,6 +203,12 @@ type AssessmentResponse struct {
 	Duplicate       bool   `json:"duplicate"`
 	RiskScore       *int   `json:"riskScore"`
 	CoveragePercent int    `json:"coveragePercent"`
+}
+
+type FileEvidenceResponse struct {
+	OK        bool `json:"ok"`
+	Duplicate bool `json:"duplicate"`
+	Accepted  int  `json:"accepted"`
 }
 
 func Str(s string) *string { return &s }

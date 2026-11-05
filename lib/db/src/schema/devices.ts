@@ -14,6 +14,7 @@ import {
   osTypeEnum,
   deviceStatusEnum,
   enrollmentStatusEnum,
+  agentOperationEnum,
   agentRequestStatusEnum,
 } from "./enums";
 
@@ -163,6 +164,10 @@ export const agentRequestsTable = pgTable(
       .notNull()
       .references(() => devicesTable.id, { onDelete: "cascade" }),
     collectors: text("collectors").array().notNull(),
+    operation: agentOperationEnum("operation").notNull().default("ASSESSMENT"),
+    scopeId: text("scope_id"),
+    /** The SQL migration owns this FK; leaving it unreferenced avoids a schema module cycle. */
+    scanJobId: uuid("scan_job_id"),
     status: agentRequestStatusEnum("status").notNull().default("PENDING"),
     requestedByUserId: text("requested_by_user_id").notNull(),
     requestedByEmail: text("requested_by_email").notNull(),

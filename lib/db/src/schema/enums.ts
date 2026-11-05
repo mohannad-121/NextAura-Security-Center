@@ -84,6 +84,24 @@ export const evidenceClassificationEnum = pgEnum("evidence_classification", [
   "NO_FINDINGS_OBSERVED",
   "UNSUPPORTED",
 ]);
+export const scanJobStatusEnum = pgEnum("scan_job_status", [
+  "QUEUED",
+  "WAITING_FOR_AGENT",
+  "RUNNING",
+  "COMPLETED",
+  "PARTIAL",
+  "FAILED",
+  "CANCELLED",
+  "EXPIRED",
+]);
+export const scanTypeEnum = pgEnum("scan_type", [
+  "SECURITY_ASSESSMENT",
+  "APPROVED_SCOPE_FILES",
+]);
+export const agentOperationEnum = pgEnum("agent_operation", [
+  "ASSESSMENT",
+  "FILE_SCOPE_SCAN",
+]);
 
 export const COLLECTOR_IDS = [
   "SYSTEM_INFO",

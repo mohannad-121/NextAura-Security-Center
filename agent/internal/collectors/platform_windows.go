@@ -259,6 +259,42 @@ func winSecurityPosture(ctx context.Context, r *model.CollectorResult) error {
 		r.Checks = append(r.Checks, ga.pass(fmt.Sprintf("Account %q (RID 501) Enabled=False", str(guests[0], "Name"))))
 	}
 
+	// Application-control event counts. These logs overlap across Smart App
+	// Control, WDAC and AppLocker, so counts are evidence of enforcement—not a
+	// claim about which policy caused a particular block.
+	ac := ck("APPLICATION_CONTROL_EVENTS", "SECURITY_POSTURE", "Recent Windows application-control enforcement events", "CodeIntegrity and AppLocker operational event counts", "Administrator or delegated event-log read access")
+	acEvents, acErr := psList(ctx, `$start=(Get-Date).AddDays(-7); $spec=@(@{Log='Microsoft-Windows-CodeIntegrity/Operational';Ids=3033,3034,3076,3077,3089},@{Log='Microsoft-Windows-AppLocker/EXE and DLL';Ids=8003,8004,8028,8029}); foreach($s in $spec){ try { Get-WinEvent -FilterHashtable @{LogName=$s.Log;Id=$s.Ids;StartTime=$start} -ErrorAction Stop | Group-Object Id | ForEach-Object { [pscustomobject]@{Log=$s.Log;Id=[string]$_.Name;Count=$_.Count} } } catch { [pscustomobject]@{Log=$s.Log;Id='UNAVAILABLE';Count=0} } }`)
+	if acErr != nil {
+		r.Checks = append(r.Checks, classify(ac, acErr))
+	} else {
+		blocks, audits, unavailable := 0, 0, 0
+		counts := map[string]int{}
+		for _, event := range acEvents {
+			id := str(event, "Id")
+			if id == "UNAVAILABLE" {
+				unavailable++
+				continue
+			}
+			count, _ := num(event, "Count")
+			counts[id] += int(count)
+			switch id {
+			case "3033", "3077", "8004", "8029":
+				blocks += int(count)
+			default:
+				audits += int(count)
+			}
+		}
+		evidence := fmt.Sprintf("Last 7 days: enforcement/block events=%d; audit/related events=%d; unavailable logs=%d. Event contents and file paths were not uploaded. These IDs alone cannot distinguish Smart App Control, WDAC, AppLocker, SmartScreen, or antivirus reputation.", blocks, audits, unavailable)
+		check := ac.status(model.StatusPass, evidence+" No observed block event is not proof that execution is allowed.", "MEDIUM")
+		if blocks > 0 {
+			check = ac.warn(evidence)
+		} else if unavailable == len(acEvents) || len(acEvents) == 0 {
+			check = ac.unknown(evidence)
+		}
+		check.Details = map[string]interface{}{"windowDays": 7, "blockEvents": blocks, "auditEvents": audits, "unavailableLogs": unavailable, "eventCounts": counts}
+		r.Checks = append(r.Checks, check)
+	}
+
 	// Remote Desktop
 	rd := ck("REMOTE_ACCESS", "SECURITY_POSTURE", "Remote Desktop disabled unless required", "HKLM\\...\\Terminal Server fDenyTSConnections", "Standard user")
 	var rdp map[string]interface{}

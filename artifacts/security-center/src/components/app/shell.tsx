@@ -18,6 +18,7 @@ import {
   Check,
   Eye,
   Siren,
+  Radar,
 } from "lucide-react";
 import {
   useGetMe,
@@ -45,6 +46,7 @@ const APP_PREFIXES = [
   "/devices",
   "/findings",
   "/incidents",
+  "/scan-center",
   "/vulnerabilities",
   "/reports",
   "/email-security",
@@ -112,6 +114,7 @@ const NAV: { group: TKey; items: NavItem[] }[] = [
     items: [
       { href: "/dashboard", key: "nav.dashboard", icon: Gauge },
       { href: "/devices", key: "nav.devices", icon: Monitor },
+      { href: "/scan-center", key: "nav.scanCenter", icon: Radar },
       { href: "/findings", key: "nav.findings", icon: ShieldAlert },
       { href: "/incidents", key: "nav.incidents", icon: Siren },
     ],

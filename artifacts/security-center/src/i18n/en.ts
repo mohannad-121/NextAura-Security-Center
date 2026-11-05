@@ -9,6 +9,7 @@ export const en = {
   "nav.enroll": "Enroll device",
   "nav.findings": "Findings",
   "nav.incidents": "Incidents",
+  "nav.scanCenter": "Scan Center",
   "nav.vulnerabilities": "Vulnerabilities",
   "nav.reports": "Reports",
   "nav.email": "Email security",

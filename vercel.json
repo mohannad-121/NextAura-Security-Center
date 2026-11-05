@@ -1,0 +1,48 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "security-center": {
+      "root": "artifacts/security-center",
+      "framework": "vite",
+      "installCommand": "corepack pnpm install --frozen-lockfile --filter @workspace/security-center...",
+      "buildCommand": "corepack pnpm run build",
+      "outputDirectory": "dist/public",
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    "api-server": {
+      "root": "artifacts/api-server",
+      "framework": "express",
+      "entrypoint": "src/app.ts",
+      "outputDirectory": ".",
+      "installCommand": "corepack pnpm install --frozen-lockfile --filter @workspace/api-server...",
+      "functions": {
+        "src/app.ts": {
+          "includeFiles": [
+            "../../agent/dist/**",
+            "node_modules/@swc/helpers/**",
+            "node_modules/tslib/**"
+          ]
+        }
+      }
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "api-server"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "security-center"
+      }
+    }
+  ]
+}
