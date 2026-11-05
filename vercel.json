@@ -18,6 +18,7 @@
       "root": "artifacts/api-server",
       "framework": "express",
       "entrypoint": "src/app.ts",
+      "outputDirectory": ".",
       "installCommand": "corepack pnpm install --frozen-lockfile --filter @workspace/api-server...",
       "functions": {
         "src/app.ts": {
