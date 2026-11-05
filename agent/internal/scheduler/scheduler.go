@@ -13,6 +13,7 @@ import (
 	"github.com/nextaura/agent/internal/client"
 	"github.com/nextaura/agent/internal/collectors"
 	"github.com/nextaura/agent/internal/config"
+	"github.com/nextaura/agent/internal/fileanalysis"
 	"github.com/nextaura/agent/internal/logging"
 	"github.com/nextaura/agent/internal/model"
 )
@@ -78,7 +79,15 @@ func (r *Runner) RunAssessment(ctx context.Context, trigger string, ids []string
 
 func (r *Runner) heartbeat(ctx context.Context) (*model.HeartbeatResponse, error) {
 	up := int64(time.Since(r.started).Seconds())
-	resp, err := r.client.Heartbeat(ctx, model.HeartbeatRequest{RequestID: newID(), AgentVersion: config.Version, Timestamp: time.Now().UTC(), UptimeSeconds: &up, CollectorErrors: r.errors})
+	localScopes, scopeErr := config.ScopeSummaries(r.dir)
+	if scopeErr != nil {
+		logging.Warnf("load local scan scopes: %v", scopeErr)
+	}
+	scopes := make([]model.ScanScopeSummary, 0, len(localScopes))
+	for _, scope := range localScopes {
+		scopes = append(scopes, model.ScanScopeSummary{ID: scope.ID, Label: scope.Label, Enabled: scope.Enabled})
+	}
+	resp, err := r.client.Heartbeat(ctx, model.HeartbeatRequest{RequestID: newID(), AgentVersion: config.Version, Timestamp: time.Now().UTC(), UptimeSeconds: &up, CollectorErrors: r.errors, ScanScopes: scopes})
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +117,14 @@ func (r *Runner) handleRequests(ctx context.Context) {
 		return
 	}
 	for _, q := range reqs {
+		if q.Operation == "FILE_SCOPE_SCAN" {
+			r.handleFileScopeRequest(ctx, q)
+			continue
+		}
+		if q.Operation != "" && q.Operation != "ASSESSMENT" {
+			_ = r.client.Ack(ctx, model.AckRequest{RequestID: q.ID, Status: "REJECTED", Reason: "unsupported fixed operation"})
+			continue
+		}
 		var ids []string
 		reject := ""
 		for _, c := range q.Collectors {
@@ -134,6 +151,56 @@ func (r *Runner) handleRequests(ctx context.Context) {
 			logging.Errorf("requested assessment failed: %v", err)
 		}
 	}
+}
+
+func (r *Runner) handleFileScopeRequest(ctx context.Context, q model.PendingRequest) {
+	if q.ScopeID == nil || *q.ScopeID == "" {
+		_ = r.client.Ack(ctx, model.AckRequest{RequestID: q.ID, Status: "REJECTED", Reason: "missing scope ID"})
+		return
+	}
+	scope, err := config.FindScope(r.dir, *q.ScopeID)
+	if err != nil {
+		_ = r.client.Ack(ctx, model.AckRequest{RequestID: q.ID, Status: "REJECTED", Reason: "unknown or revoked local scope"})
+		return
+	}
+	if err := r.client.Ack(ctx, model.AckRequest{RequestID: q.ID, Status: "ACKNOWLEDGED"}); err != nil {
+		logging.Warnf("ack file scan %s: %v", q.ID, err)
+		return
+	}
+	logging.Infof("running bounded file assessment %s for local scope %s", q.ID, scope.ID)
+	result, err := fileanalysis.ScanScope(ctx, scope.Root, fileanalysis.Options{Limits: fileanalysis.DefaultLimits()}, fileanalysis.DefaultScopeLimits())
+	if err != nil {
+		logging.Errorf("file assessment %s failed: %v", q.ID, err)
+		_ = r.client.Ack(ctx, model.AckRequest{RequestID: q.ID, Status: "REJECTED", Reason: "bounded file assessment failed"})
+		return
+	}
+	payload := struct {
+		IdempotencyKey string                       `json:"idempotencyKey"`
+		AgentRequestID string                       `json:"agentRequestId"`
+		ScopeID        string                       `json:"scopeId"`
+		FilesObserved  int                          `json:"filesObserved"`
+		FilesAnalyzed  int                          `json:"filesAnalyzed"`
+		Partial        bool                         `json:"partial"`
+		Limitations    []string                     `json:"limitations"`
+		Evidence       []fileanalysis.ScopeEvidence `json:"evidence"`
+	}{newID(), q.ID, scope.ID, result.FilesObserved, result.FilesAnalyzed, result.Partial, result.Limitations, result.Evidence}
+	backoff := 5 * time.Second
+	for attempt := 1; attempt <= 5; attempt++ {
+		if _, err = r.client.SubmitFileEvidence(ctx, payload); err == nil {
+			return
+		}
+		if errors.Is(err, client.ErrUnauthorized) || errors.Is(err, client.ErrRevoked) {
+			break
+		}
+		logging.Warnf("file evidence upload %s attempt %d failed: %v", q.ID, attempt, err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+			backoff *= 2
+		}
+	}
+	logging.Errorf("file evidence upload %s failed after bounded retries: %v", q.ID, err)
 }
 
 // Loop runs until ctx is cancelled. Returns ErrRevoked if the server revoked us.

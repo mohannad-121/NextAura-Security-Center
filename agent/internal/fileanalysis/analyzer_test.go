@@ -2,6 +2,7 @@ package fileanalysis
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -91,6 +92,64 @@ func TestAnalyzeZIPMetadataWithoutExtraction(t *testing.T) {
 	}
 	assertIndicator(t, r, "ARCHIVE_HIGH_RISK_CONTENT")
 	assertIndicator(t, r, "NESTED_ARCHIVE")
+}
+
+func TestAnalyzeBoundedNestedZIP(t *testing.T) {
+	dir := t.TempDir()
+	var nested bytes.Buffer
+	nestedWriter := zip.NewWriter(&nested)
+	w, _ := nestedWriter.Create("payload.exe")
+	_, _ = w.Write([]byte("MZ harmless fixture"))
+	_ = nestedWriter.Close()
+	p := filepath.Join(dir, "outer.zip")
+	f, _ := os.Create(p)
+	outer := zip.NewWriter(f)
+	entry, _ := outer.Create("nested.zip")
+	_, _ = entry.Write(nested.Bytes())
+	_ = outer.Close()
+	_ = f.Close()
+	r, err := Analyze(context.Background(), p, Options{ApprovedRoot: dir, Limits: DefaultLimits()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Archive == nil || r.Archive.NestedInspectedCount != 1 {
+		t.Fatalf("nested inspection not recorded: %#v", r.Archive)
+	}
+	assertIndicator(t, r, "NESTED_ARCHIVE_HIGH_RISK_CONTENT")
+}
+
+func TestAnalyzeISO9660MetadataWithoutMounting(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "fixture.iso")
+	data := make([]byte, 18*2048)
+	pvd := data[16*2048 : 17*2048]
+	pvd[0] = 1
+	copy(pvd[1:6], "CD001")
+	pvd[6] = 1
+	root := pvd[156:190]
+	root[0] = 34
+	binary.LittleEndian.PutUint32(root[2:6], 17)
+	binary.LittleEndian.PutUint32(root[10:14], 2048)
+	root[25] = 2
+	root[32] = 1
+	dirEntry := data[17*2048:]
+	name := []byte("payload.exe")
+	dirEntry[0] = byte(33 + len(name))
+	binary.LittleEndian.PutUint32(dirEntry[2:6], 18)
+	binary.LittleEndian.PutUint32(dirEntry[10:14], 10)
+	dirEntry[32] = byte(len(name))
+	copy(dirEntry[33:], name)
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Analyze(context.Background(), p, Options{ApprovedRoot: dir, Limits: DefaultLimits()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Archive == nil || r.Archive.EntryCount != 1 {
+		t.Fatalf("ISO metadata not parsed: %#v", r.Archive)
+	}
+	assertIndicator(t, r, "ISO_HIGH_RISK_CONTENT")
 }
 
 func TestOfficeOpenXMLContainerIsNotAnExtensionMismatch(t *testing.T) {

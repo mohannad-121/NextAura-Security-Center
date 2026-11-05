@@ -150,6 +150,16 @@ export const heartbeatBodySchema = z.object({
     )
     .max(50)
     .default([]),
+  scanScopes: z
+    .array(
+      z.object({
+        id: z.string().regex(/^scope_[0-9a-f]{32}$/),
+        label: shortStr(120).min(1),
+        enabled: z.boolean(),
+      }),
+    )
+    .max(100)
+    .optional(),
 });
 
 export const assessmentBodySchema = z.object({
@@ -169,6 +179,95 @@ export const ackBodySchema = z.object({
   status: z.enum(["ACKNOWLEDGED", "REJECTED"]),
   reason: shortStr(300).optional(),
 });
+
+const evidenceClassificationSchema = z.enum([
+  "CONFIRMED_DETECTION",
+  "SUSPICIOUS_INDICATOR",
+  "INCONCLUSIVE",
+  "NO_FINDINGS_OBSERVED",
+  "UNSUPPORTED",
+]);
+const indicatorSchema = z.object({
+  id: shortStr(120),
+  classification: evidenceClassificationSchema,
+  severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]),
+  evidence: shortStr(2000),
+});
+const archiveSummarySchema = z.object({
+  entryCount: z.number().int().nonnegative().max(100000),
+  entries: z
+    .array(
+      z.object({
+        name: shortStr(300),
+        compressedBytes: z.number().int().nonnegative(),
+        uncompressedBytes: z.number().int().nonnegative(),
+        encrypted: z.boolean(),
+        highRiskType: z.boolean(),
+      }),
+    )
+    .max(512),
+  encryptedEntryCount: z.number().int().nonnegative(),
+  nestedArchiveCount: z.number().int().nonnegative(),
+  highRiskEntryCount: z.number().int().nonnegative(),
+  totalCompressedBytes: z.number().int().nonnegative(),
+  totalUncompressedBytes: z.number().int().nonnegative(),
+  inspectionTruncated: z.boolean(),
+  nestedInspectedCount: z.number().int().nonnegative().default(0),
+  nestedSkippedCount: z.number().int().nonnegative().default(0),
+});
+export const fileEvidenceBodySchema = z.object({
+  idempotencyKey: shortStr(80),
+  agentRequestId: z.string().uuid(),
+  scopeId: z.string().regex(/^scope_[0-9a-f]{32}$/),
+  filesObserved: z.number().int().nonnegative().max(10_000_000),
+  filesAnalyzed: z.number().int().nonnegative().max(500),
+  partial: z.boolean(),
+  limitations: z.array(shortStr(1000)).max(50),
+  evidence: z
+    .array(
+      z.object({
+        evidenceKey: z.string().regex(/^[0-9a-f]{64}$/),
+        relativePathHash: z.string().regex(/^[0-9a-f]{64}$/),
+        observedAt: isoDate,
+        detectorId: z.literal("NEXTAURA_STATIC_FILE_ANALYZER"),
+        detectorVersion: shortStr(40),
+        evidenceSource: z.literal("LOCAL_APPROVED_SCOPE_STATIC_ANALYSIS"),
+        confidence: confidenceSchema,
+        severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]),
+        result: z.object({
+          fileName: shortStr(300).refine(
+            (value) => !value.includes("/") && !value.includes("\\"),
+            "fileName must not include a path",
+          ),
+          sizeBytes: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(512 * 1024 * 1024),
+          sha256: z.string().regex(/^[0-9a-f]{64}$/),
+          extension: shortStr(30),
+          detectedType: shortStr(80),
+          signatureMetadata: shortStr(120),
+          classification: evidenceClassificationSchema,
+          indicators: z.array(indicatorSchema).max(200),
+          archive: archiveSummarySchema.nullable().optional(),
+          pe: z
+            .object({
+              machine: shortStr(20),
+              sectionCount: z.number().int().nonnegative().max(200),
+              importedSymbols: z.array(shortStr(300)).max(100),
+              writableExecutableSections: z.array(shortStr(30)).max(50),
+              timeDateStamp: z.number().int().nonnegative(),
+            })
+            .nullable()
+            .optional(),
+          limitations: z.array(shortStr(1000)).max(100),
+        }),
+      }),
+    )
+    .max(500),
+});
+export type FileEvidenceBody = z.infer<typeof fileEvidenceBodySchema>;
 
 export const AGENT_API_VERSION = "1";
 export const DEVICE_TOKEN_TTL_DAYS = 90;

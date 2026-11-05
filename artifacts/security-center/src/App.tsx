@@ -26,6 +26,7 @@ import Reports from "@/pages/reports";
 import EmailSecurity from "@/pages/email-security";
 import SettingsPage from "@/pages/settings";
 import Incidents from "@/pages/incidents";
+import ScanCenter from "@/pages/scan-center";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -187,6 +188,7 @@ function Router() {
           <Route path="/devices/:id" component={DeviceDetailPage} />
           <Route path="/findings" component={Findings} />
           <Route path="/incidents" component={Incidents} />
+          <Route path="/scan-center" component={ScanCenter} />
           <Route path="/vulnerabilities" component={Vulnerabilities} />
           <Route path="/reports" component={Reports} />
           <Route path="/email-security" component={EmailSecurity} />

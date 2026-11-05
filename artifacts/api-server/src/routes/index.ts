@@ -12,6 +12,7 @@ import settingsRouter from "./settings";
 import emailSecurityRouter from "./emailSecurity";
 import rulesRouter from "./rules";
 import incidentsRouter from "./incidents";
+import scanCenterRouter from "./scanCenter";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(settingsRouter);
 router.use(emailSecurityRouter);
 router.use(rulesRouter);
 router.use(incidentsRouter);
+router.use(scanCenterRouter);
 
 export default router;

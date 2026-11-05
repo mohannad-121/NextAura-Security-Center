@@ -1,6 +1,6 @@
 begin;
 
-select plan(6);
+select plan(7);
 
 select is(
   (
@@ -11,7 +11,7 @@ select is(
       and c.relkind = 'r'
       and c.relrowsecurity
   ),
-  28::bigint,
+  32::bigint,
   'RLS is enabled on every NextAura public table'
 );
 
@@ -31,6 +31,21 @@ select ok(
     and not has_schema_privilege('authenticated', 'public', 'USAGE')
     and not has_schema_privilege('service_role', 'public', 'USAGE'),
   'Data API roles have no public-schema usage'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_index i
+    join pg_class idx on idx.oid = i.indexrelid
+    join pg_class tbl on tbl.oid = i.indrelid
+    join pg_namespace n on n.oid = tbl.relnamespace
+    where n.nspname = 'public'
+      and tbl.relname = 'scan_file_evidence'
+      and idx.relname = 'scan_file_evidence_request_key_idx'
+      and i.indisunique
+  ),
+  'agent file evidence is idempotent per request and evidence key'
 );
 
 select ok(

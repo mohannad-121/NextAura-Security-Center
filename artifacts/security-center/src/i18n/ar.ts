@@ -7,6 +7,7 @@ export const ar: Partial<Record<TKey, string>> = {
   "nav.devices": "الأجهزة",
   "nav.findings": "النتائج",
   "nav.incidents": "الحوادث",
+  "nav.scanCenter": "مركز الفحص",
   "nav.settings": "الإعدادات",
   "shell.signOut": "تسجيل الخروج",
 };

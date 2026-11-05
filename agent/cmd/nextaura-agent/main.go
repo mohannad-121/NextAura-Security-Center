@@ -50,6 +50,8 @@ func main() {
 		err = cmdAssess(dir, os.Args[2:], false)
 	case "inspect-file":
 		err = cmdInspectFile(os.Args[2:])
+	case "scope":
+		err = cmdScope(dir, os.Args[2:])
 	case "status":
 		err = cmdStatus(dir)
 	case "unenroll":
@@ -77,9 +79,60 @@ Commands:
   assess   run collectors now and upload (--collectors A,B)
   collect  run collectors and print JSON locally without uploading
   inspect-file  bounded local inspection; never uploads or executes the file
+  scope     locally approve, list, or revoke bounded file-scan roots
   status   show enrollment status (token redacted)
   unenroll delete the local token
   version`)
+}
+
+func cmdScope(dir string, args []string) error {
+	if len(args) == 0 {
+		return errors.New("scope subcommand required: add, list, or revoke")
+	}
+	switch args[0] {
+	case "add":
+		fs := flag.NewFlagSet("scope add", flag.ContinueOnError)
+		root := fs.String("root", "", "existing directory to approve locally")
+		label := fs.String("label", "", "non-sensitive dashboard label")
+		consent := fs.Bool("consent", false, "confirm local administrator authorization")
+		personal := fs.Bool("include-personal", false, "explicitly allow a reviewed personal-directory scope")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *root == "" || *label == "" || !*consent {
+			return errors.New("--root, --label, and explicit --consent are required")
+		}
+		scope, err := config.AddScope(dir, *label, *root, *personal)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Approved local scope %s (%s). The path remains on this device.\n", scope.ID, scope.Label)
+		return nil
+	case "list":
+		scopes, err := config.LoadScopes(dir)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(scopes)
+	case "revoke":
+		fs := flag.NewFlagSet("scope revoke", flag.ContinueOnError)
+		id := fs.String("id", "", "scope ID to revoke locally")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *id == "" {
+			return errors.New("--id is required")
+		}
+		if err := config.RevokeScope(dir, *id); err != nil {
+			return err
+		}
+		fmt.Println("Revoked local scope", *id)
+		return nil
+	default:
+		return errors.New("unknown scope subcommand; use add, list, or revoke")
+	}
 }
 
 func osType() (string, error) {

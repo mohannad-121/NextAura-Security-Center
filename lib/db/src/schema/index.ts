@@ -4,3 +4,4 @@ export * from "./devices";
 export * from "./assessments";
 export * from "./platform";
 export * from "./incidents";
+export * from "./scans";
