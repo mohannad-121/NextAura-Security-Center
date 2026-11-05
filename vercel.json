@@ -21,7 +21,11 @@
       "installCommand": "corepack pnpm install --frozen-lockfile --filter @workspace/api-server...",
       "functions": {
         "src/app.ts": {
-          "includeFiles": "../../agent/dist/**"
+          "includeFiles": [
+            "../../agent/dist/**",
+            "node_modules/@swc/helpers/**",
+            "node_modules/tslib/**"
+          ]
         }
       }
     }

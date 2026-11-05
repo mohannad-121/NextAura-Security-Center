@@ -45,6 +45,7 @@ Do not put database URLs, Clerk secret keys, NVD keys, agent tokens, or any othe
 ## Runtime limitations
 
 - The API is stateless and may scale to zero. PostgreSQL connections use a small per-instance pool; use the Supabase transaction pooler rather than a direct session connection.
+- The API function bundle explicitly includes the SWC runtime helpers required by the PDF/report dependency chain and the tracked agent packages used by download routes.
 - The local hourly vulnerability-intelligence scheduler is not started in a Vercel Function. Manual refresh and durable scheduling require a separately reviewed Vercel Cron/Workflow design before production.
 - Vercel deployment does not verify installation, enrollment, service startup, or scanning by the separate Go endpoint agent.
 - Agent packages remain unavailable for trusted download unless their exact SHA-256/build identity has an independent native verification record. Deployment never changes that status.
