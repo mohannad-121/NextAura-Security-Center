@@ -16,7 +16,11 @@ func TestScopeRequiresExistingDirectoryAndRevokes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if scope.ID == "" || scope.Root != root {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.ID == "" || !samePath(scope.Root, resolvedRoot) {
 		t.Fatalf("unexpected scope: %#v", scope)
 	}
 	if err := RevokeScope(filepath.Join(dir, "state"), scope.ID); err != nil {
