@@ -6,6 +6,7 @@ export const ar: Partial<Record<TKey, string>> = {
   "nav.dashboard": "لوحة التحكم",
   "nav.devices": "الأجهزة",
   "nav.findings": "النتائج",
+  "nav.incidents": "الحوادث",
   "nav.settings": "الإعدادات",
   "shell.signOut": "تسجيل الخروج",
 };

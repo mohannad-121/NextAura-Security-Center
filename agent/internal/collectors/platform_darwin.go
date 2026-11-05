@@ -337,6 +337,7 @@ func macAntivirus(ctx context.Context, r *model.CollectorResult) error {
 	}
 	r.Antivirus = av
 	r.Checks = append(r.Checks, ck("THREAT_HISTORY", "ANTIVIRUS", "Antivirus detection history available", "n/a on macOS", "n/a").unsupportedCheck("macOS exposes no standard detection-history API; third-party product consoles hold this data"))
+	r.Checks = append(r.Checks, ck("SECURITY_TELEMETRY_ANOMALIES", "ANTIVIRUS", "Recent endpoint security telemetry anomalies", "macOS unified log / EDR", "Explicit vendor integration authorization").unsupportedCheck("No stable cross-vendor macOS detection-history API is available; querying third-party EDR or broad unified-log contents is not authorized by default"))
 	return nil
 }
 

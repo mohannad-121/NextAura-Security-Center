@@ -17,8 +17,13 @@ import {
   Bug,
   Check,
   Eye,
+  Siren,
 } from "lucide-react";
-import { useGetMe, useSelectOrganization, type Me } from "@workspace/api-client-react";
+import {
+  useGetMe,
+  useSelectOrganization,
+  type Me,
+} from "@workspace/api-client-react";
 import { MeContext, canAdmin } from "@/lib/session";
 import { useT, type TKey } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -35,7 +40,17 @@ import {
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-const APP_PREFIXES = ["/dashboard", "/devices", "/findings", "/vulnerabilities", "/reports", "/email-security", "/settings", "/onboarding"];
+const APP_PREFIXES = [
+  "/dashboard",
+  "/devices",
+  "/findings",
+  "/incidents",
+  "/vulnerabilities",
+  "/reports",
+  "/email-security",
+  "/settings",
+  "/onboarding",
+];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
@@ -44,27 +59,45 @@ export function AppShell({ children }: { children: ReactNode }) {
   return <AuthGate onboarding={loc === "/onboarding"}>{children}</AuthGate>;
 }
 
-function AuthGate({ children, onboarding }: { children: ReactNode; onboarding: boolean }) {
+function AuthGate({
+  children,
+  onboarding,
+}: {
+  children: ReactNode;
+  onboarding: boolean;
+}) {
   const { isLoaded, isSignedIn } = useAuth();
   if (!isLoaded) return <ShellSkeleton />;
   if (!isSignedIn) return <Redirect to="/" />;
   return <MeGate onboarding={onboarding}>{children}</MeGate>;
 }
 
-function MeGate({ children, onboarding }: { children: ReactNode; onboarding: boolean }) {
+function MeGate({
+  children,
+  onboarding,
+}: {
+  children: ReactNode;
+  onboarding: boolean;
+}) {
   const me = useGetMe();
   if (me.isLoading) return <ShellSkeleton />;
   if (me.isError || !me.data)
     return (
       <div className="grid min-h-[100dvh] place-items-center px-4">
         <div className="w-full max-w-md">
-          <ErrorState error={me.error} onRetry={() => void me.refetch()} title="We could not load your account." />
+          <ErrorState
+            error={me.error}
+            onRetry={() => void me.refetch()}
+            title="We could not load your account."
+          />
         </div>
       </div>
     );
   const data = me.data;
-  if (!data.currentOrganization && !onboarding) return <Redirect to="/onboarding" />;
-  if (data.currentOrganization && onboarding) return <Redirect to="/dashboard" />;
+  if (!data.currentOrganization && !onboarding)
+    return <Redirect to="/onboarding" />;
+  if (data.currentOrganization && onboarding)
+    return <Redirect to="/dashboard" />;
   return (
     <MeContext.Provider value={data}>
       {onboarding ? children : <Frame me={data}>{children}</Frame>}
@@ -80,6 +113,7 @@ const NAV: { group: TKey; items: NavItem[] }[] = [
       { href: "/dashboard", key: "nav.dashboard", icon: Gauge },
       { href: "/devices", key: "nav.devices", icon: Monitor },
       { href: "/findings", key: "nav.findings", icon: ShieldAlert },
+      { href: "/incidents", key: "nav.incidents", icon: Siren },
     ],
   },
   {
@@ -90,7 +124,10 @@ const NAV: { group: TKey; items: NavItem[] }[] = [
       { href: "/reports", key: "nav.reports", icon: FileText },
     ],
   },
-  { group: "nav.groupAdmin", items: [{ href: "/settings", key: "nav.settings", icon: Settings }] },
+  {
+    group: "nav.groupAdmin",
+    items: [{ href: "/settings", key: "nav.settings", icon: Settings }],
+  },
 ];
 
 function Frame({ me, children }: { me: Me; children: ReactNode }) {
@@ -102,14 +139,20 @@ function Frame({ me, children }: { me: Me; children: ReactNode }) {
         <SidebarBody me={me} />
       </aside>
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="w-[264px] border-sidebar-border bg-sidebar p-0">
+        <SheetContent
+          side="left"
+          className="w-[264px] border-sidebar-border bg-sidebar p-0"
+        >
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <SidebarBody me={me} onNavigate={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
       <div className="lg:pl-[248px]">
         {me.demoMode && (
-          <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-warn/30 bg-[#2a1f0b]/95 px-5 py-2 text-xs backdrop-blur" data-testid="banner-demo">
+          <div
+            className="sticky top-0 z-20 flex items-center gap-3 border-b border-warn/30 bg-[#2a1f0b]/95 px-5 py-2 text-xs backdrop-blur"
+            data-testid="banner-demo"
+          >
             <span className="rounded border border-warn/50 bg-warn/15 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold tracking-[0.18em] text-warn">
               {t("shell.demoBanner")}
             </span>
@@ -117,12 +160,19 @@ function Frame({ me, children }: { me: Me; children: ReactNode }) {
           </div>
         )}
         <div className="flex items-center gap-3 border-b hairline px-4 py-3 lg:hidden">
-          <button onClick={() => setOpen(true)} className="rounded-lg border border-border p-2" data-testid="button-open-nav" aria-label="Open navigation">
+          <button
+            onClick={() => setOpen(true)}
+            className="rounded-lg border border-border p-2"
+            data-testid="button-open-nav"
+            aria-label="Open navigation"
+          >
             <Menu className="size-4" />
           </button>
           <Logo compact />
         </div>
-        <main className="mx-auto w-full max-w-[1400px] px-4 py-7 md:px-8 md:py-9">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] px-4 py-7 md:px-8 md:py-9">
+          {children}
+        </main>
       </div>
     </div>
   );
@@ -143,10 +193,15 @@ function SidebarBody({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
       <nav className="mt-5 flex-1 space-y-5 overflow-y-auto px-3 scroll-thin">
         {NAV.map((g) => (
           <div key={g.group}>
-            <div className="eyebrow px-2.5 pb-1.5 !text-[9.5px]">{t(g.group)}</div>
+            <div className="eyebrow px-2.5 pb-1.5 !text-[9.5px]">
+              {t(g.group)}
+            </div>
             <div className="space-y-0.5">
               {g.items.map((it) => {
-                const active = loc === it.href || (loc.startsWith(it.href + "/") && !(it.href === "/devices" && loc === "/devices/enroll"));
+                const active =
+                  loc === it.href ||
+                  (loc.startsWith(it.href + "/") &&
+                    !(it.href === "/devices" && loc === "/devices/enroll"));
                 return (
                   <Link
                     key={it.href}
@@ -155,11 +210,22 @@ function SidebarBody({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
                     data-testid={`link-nav-${it.href.slice(1)}`}
                     className={cn(
                       "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
-                      active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground/75 hover:bg-white/[0.03] hover:text-foreground",
+                      active
+                        ? "bg-sidebar-accent text-foreground"
+                        : "text-sidebar-foreground/75 hover:bg-white/[0.03] hover:text-foreground",
                     )}
                   >
-                    {active && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-violet" />}
-                    <it.icon className={cn("size-4", active ? "text-violet" : "text-muted-foreground group-hover:text-foreground")} />
+                    {active && (
+                      <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-violet" />
+                    )}
+                    <it.icon
+                      className={cn(
+                        "size-4",
+                        active
+                          ? "text-violet"
+                          : "text-muted-foreground group-hover:text-foreground",
+                      )}
+                    />
                     {t(it.key)}
                   </Link>
                 );
@@ -212,7 +278,9 @@ function OrgSwitcher({ me }: { me: Me }) {
           {(cur?.name ?? "?").slice(0, 2).toUpperCase()}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-foreground">{cur?.name}</span>
+          <span className="block truncate text-[13px] font-medium text-foreground">
+            {cur?.name}
+          </span>
           <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             {cur ? t(`shell.role.${cur.role}` as TKey) : ""}
           </span>
@@ -220,13 +288,18 @@ function OrgSwitcher({ me }: { me: Me }) {
         <ChevronsUpDown className="size-3.5 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[230px]">
-        <DropdownMenuLabel className="eyebrow">{t("shell.switchOrg")}</DropdownMenuLabel>
+        <DropdownMenuLabel className="eyebrow">
+          {t("shell.switchOrg")}
+        </DropdownMenuLabel>
         {me.organizations.map((o) => (
           <DropdownMenuItem
             key={o.id}
             data-testid={`item-org-${o.id}`}
             disabled={select.isPending}
-            onSelect={() => o.id !== cur?.id && select.mutate({ data: { organizationId: o.id } })}
+            onSelect={() =>
+              o.id !== cur?.id &&
+              select.mutate({ data: { organizationId: o.id } })
+            }
             className="gap-2"
           >
             <Building2 className="size-3.5 text-muted-foreground" />
@@ -242,14 +315,28 @@ function OrgSwitcher({ me }: { me: Me }) {
 function UserMenu({ me }: { me: Me }) {
   const { signOut } = useClerk();
   const t = useT();
-  const initials = (me.name || me.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("");
+  const initials = (me.name || me.email)
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase())
+    .join("");
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger data-testid="button-user-menu" className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-white/[0.04]">
-        <span className="grid size-8 place-items-center rounded-full border border-border bg-secondary text-[11px] font-semibold">{initials}</span>
+      <DropdownMenuTrigger
+        data-testid="button-user-menu"
+        className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-white/[0.04]"
+      >
+        <span className="grid size-8 place-items-center rounded-full border border-border bg-secondary text-[11px] font-semibold">
+          {initials}
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] text-foreground">{me.name || me.email}</span>
-          <span className="block truncate text-[11px] text-muted-foreground">{me.email}</span>
+          <span className="block truncate text-[13px] text-foreground">
+            {me.name || me.email}
+          </span>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            {me.email}
+          </span>
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top" className="w-[220px]">
@@ -259,7 +346,10 @@ function UserMenu({ me }: { me: Me }) {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem data-testid="button-sign-out" onSelect={() => void signOut({ redirectUrl: basePath || "/" })}>
+        <DropdownMenuItem
+          data-testid="button-sign-out"
+          onSelect={() => void signOut({ redirectUrl: basePath || "/" })}
+        >
           <LogOut className="mr-2 size-3.5" /> {t("shell.signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>

@@ -4,6 +4,7 @@
 //	nextaura-agent run                 (foreground service loop)
 //	nextaura-agent assess [--collectors A,B]  (one-off assessment, uploads)
 //	nextaura-agent collect [--collectors A,B] (print results locally, no upload)
+//	nextaura-agent inspect-file --path FILE --approved-root DIR (local JSON only)
 //	nextaura-agent status
 //	nextaura-agent unenroll
 package main
@@ -25,6 +26,7 @@ import (
 	"github.com/nextaura/agent/internal/client"
 	"github.com/nextaura/agent/internal/collectors"
 	"github.com/nextaura/agent/internal/config"
+	"github.com/nextaura/agent/internal/fileanalysis"
 	"github.com/nextaura/agent/internal/logging"
 	"github.com/nextaura/agent/internal/model"
 	"github.com/nextaura/agent/internal/scheduler"
@@ -46,6 +48,8 @@ func main() {
 		err = cmdAssess(dir, os.Args[2:], true)
 	case "collect":
 		err = cmdAssess(dir, os.Args[2:], false)
+	case "inspect-file":
+		err = cmdInspectFile(os.Args[2:])
 	case "status":
 		err = cmdStatus(dir)
 	case "unenroll":
@@ -72,6 +76,7 @@ Commands:
   run      run the service loop in the foreground
   assess   run collectors now and upload (--collectors A,B)
   collect  run collectors and print JSON locally without uploading
+  inspect-file  bounded local inspection; never uploads or executes the file
   status   show enrollment status (token redacted)
   unenroll delete the local token
   version`)
@@ -231,4 +236,67 @@ func cmdStatus(dir string) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(st.Redacted())
+}
+
+func cmdInspectFile(args []string) error {
+	fs := flag.NewFlagSet("inspect-file", flag.ContinueOnError)
+	path := fs.String("path", "", "file to inspect")
+	root := fs.String("approved-root", "", "administrator-approved root containing the file")
+	hashFeed := fs.String("hash-feed", "", "optional approved local JSON hash intelligence map")
+	rulesFile := fs.String("rules", "", "optional approved local JSON offline pattern rules")
+	maxMB := fs.Int64("max-file-mb", 128, "maximum file size to inspect (1-512 MiB)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *path == "" || *root == "" {
+		return errors.New("--path and --approved-root are required")
+	}
+	if *maxMB < 1 || *maxMB > 512 {
+		return errors.New("--max-file-mb must be between 1 and 512")
+	}
+	opts := fileanalysis.Options{ApprovedRoot: *root, Limits: fileanalysis.DefaultLimits()}
+	opts.Limits.MaxFileBytes = *maxMB << 20
+	if *hashFeed != "" {
+		opts.HashIntelligence = map[string]fileanalysis.HashIntelligence{}
+		if err := decodeBoundedJSON(*hashFeed, &opts.HashIntelligence); err != nil {
+			return fmt.Errorf("hash feed: %w", err)
+		}
+	}
+	if *rulesFile != "" {
+		if err := decodeBoundedJSON(*rulesFile, &opts.Patterns); err != nil {
+			return fmt.Errorf("rules: %w", err)
+		}
+		if len(opts.Patterns) > 50 {
+			return errors.New("rules file exceeds the 50-rule limit")
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	result, err := fileanalysis.Analyze(ctx, *path, opts)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(result)
+}
+
+func decodeBoundedJSON(path string, target interface{}) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	limited := io.LimitReader(f, (2<<20)+1)
+	b, err := io.ReadAll(limited)
+	if err != nil {
+		return err
+	}
+	if len(b) > 2<<20 {
+		return errors.New("JSON input exceeds 2 MiB")
+	}
+	if err := json.Unmarshal(b, target); err != nil {
+		return err
+	}
+	return nil
 }

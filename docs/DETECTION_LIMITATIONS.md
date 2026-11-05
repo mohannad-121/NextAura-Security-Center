@@ -1,0 +1,22 @@
+# Detection Limitations
+
+- NextAura cannot guarantee malware detection or prove that a device/file is clean.
+- `NO_FINDINGS_OBSERVED` means only that configured rules found nothing in the evidence that was available.
+- File analysis is static and bounded. It does not execute, emulate, detonate, mount, extract, deobfuscate, or recover passwords.
+- ZIP entry names and sizes can be misleading. Encrypted entries, unsupported compression, malformed archives, and nested containers reduce confidence.
+- ISO images are recognized but not mounted or traversed. ISO contents therefore remain unobserved.
+- PE certificate-table presence is metadata, not cryptographic signature validation, chain validation, reputation, or publisher trust.
+- MSI signature validation and LNK target parsing are not implemented.
+- Offline literal rules are YARA-style prototypes, not compatible with the full YARA language and not a substitute for maintained signatures.
+- Local hash intelligence is exact-match only. Unknown hashes are not benign, and feed quality/provenance remains the administrator's responsibility.
+- No online reputation provider is configured. NextAura never uploads files and does not transmit hashes unless a future integration is explicitly approved and documented.
+- Existing antivirus detections reflect the product's own history and retention. Missing records can result from permissions, retention, product differences, tampering, or an attack the product did not detect.
+- Defender event collection records selected event counts only. It does not ingest command lines, document contents, process memory, or complete event payloads.
+- macOS has no stable cross-vendor detection-history API. Third-party console data is unsupported without an approved vendor integration.
+- Startup-location heuristics can produce false positives. Findings require analyst validation and are never auto-remediated.
+- Software-to-CVE matching is subject to inventory naming, version parsing, and cached intelligence freshness.
+- The agent has no remote shell, arbitrary command execution, quarantine, deletion, security-setting modification, or stealth persistence capability.
+- Real Windows service and macOS launchd installation/enrollment/restart/uninstall testing remains blocked on controlled native endpoints and a staging backend.
+- Checked-in installers are unsigned and unverified; this branch does not rebuild, trust, release, or publish them.
+- The incident dashboard and PDF are implemented but still require staging user-acceptance and accessibility testing.
+- Production Supabase was not modified. New migrations must pass review and controlled staging deployment before production consideration.
