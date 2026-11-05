@@ -27,7 +27,7 @@ func registerPlatform(reg map[string]Collector) {
 // ps runs a read-only PowerShell expression and decodes JSON output into v.
 // -NonInteractive and -NoProfile prevent any user profile script from running.
 func ps(ctx context.Context, v interface{}, script string) error {
-	out, err := run(ctx, 45*time.Second, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+	out, err := run(ctx, 45*time.Second, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
 		"$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; "+script+" | ConvertTo-Json -Depth 4 -Compress")
 	if err != nil {
 		return err
@@ -434,6 +434,28 @@ func winAntivirus(ctx context.Context, r *model.CollectorResult) error {
 			})
 		}
 		r.Checks = append(r.Checks, th.pass(fmt.Sprintf("%d detection record(s) reported by Defender", len(threats))))
+	}
+
+	telemetry := ck("SECURITY_TELEMETRY_ANOMALIES", "ANTIVIRUS", "Recent Defender detection or protection-change events", "Microsoft-Windows-Windows Defender/Operational event counts", "Standard user with event-log read access")
+	events, eventErr := psList(ctx, `$start=(Get-Date).AddDays(-7); Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Windows Defender/Operational';Id=1116,5001;StartTime=$start} -ErrorAction Stop | Group-Object Id | Select-Object Name,Count`)
+	if eventErr != nil {
+		r.Checks = append(r.Checks, classify(telemetry, eventErr))
+	} else {
+		counts := map[string]int{}
+		for _, event := range events {
+			if count, ok := num(event, "Count"); ok {
+				counts[str(event, "Name")] = int(count)
+			}
+		}
+		detections, protectionDisabled := counts["1116"], counts["5001"]
+		evidence := fmt.Sprintf("Last 7 days: Defender detection events (1116)=%d; real-time protection disabled events (5001)=%d. Event contents were not collected.", detections, protectionDisabled)
+		if detections > 0 || protectionDisabled > 0 {
+			check := telemetry.warn(evidence)
+			check.Details = map[string]interface{}{"windowDays": 7, "detectionEvents": detections, "protectionDisabledEvents": protectionDisabled}
+			r.Checks = append(r.Checks, check)
+		} else {
+			r.Checks = append(r.Checks, telemetry.status(model.StatusPass, evidence+" Absence of these events is not proof the endpoint is clean.", "MEDIUM"))
+		}
 	}
 	return nil
 }

@@ -11,7 +11,7 @@ select is(
       and c.relkind = 'r'
       and c.relrowsecurity
   ),
-  23::bigint,
+  28::bigint,
   'RLS is enabled on every NextAura public table'
 );
 

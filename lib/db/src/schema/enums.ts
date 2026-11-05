@@ -66,8 +66,24 @@ export const reportTypeEnum = pgEnum("report_type", [
   "ORGANIZATION_PDF",
   "FINDINGS_CSV",
 ]);
-export const reportStatusEnum = pgEnum("report_status", ["COMPLETED", "FAILED"]);
+export const reportStatusEnum = pgEnum("report_status", [
+  "COMPLETED",
+  "FAILED",
+]);
 export const actorTypeEnum = pgEnum("actor_type", ["USER", "DEVICE", "SYSTEM"]);
+export const incidentStatusEnum = pgEnum("incident_status", [
+  "OPEN",
+  "INVESTIGATING",
+  "CONTAINED",
+  "CLOSED",
+]);
+export const evidenceClassificationEnum = pgEnum("evidence_classification", [
+  "CONFIRMED_DETECTION",
+  "SUSPICIOUS_INDICATOR",
+  "INCONCLUSIVE",
+  "NO_FINDINGS_OBSERVED",
+  "UNSUPPORTED",
+]);
 
 export const COLLECTOR_IDS = [
   "SYSTEM_INFO",

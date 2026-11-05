@@ -2,7 +2,11 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { ClerkProvider, SignIn, SignUp, useClerk } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { dark } from "@clerk/themes";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Route, Switch, useLocation, Router as WouterRouter } from "wouter";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
@@ -21,9 +25,12 @@ import Vulnerabilities from "@/pages/vulnerabilities";
 import Reports from "@/pages/reports";
 import EmailSecurity from "@/pages/email-security";
 import SettingsPage from "@/pages/settings";
+import Incidents from "@/pages/incidents";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 15_000 } },
+  defaultOptions: {
+    queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 15_000 },
+  },
 });
 
 // REQUIRED — copy verbatim.
@@ -69,7 +76,8 @@ const clerkAppearance = {
   },
   elements: {
     rootBox: "w-full flex justify-center",
-    cardBox: "bg-[#161B30] border border-[#2A3150] rounded-2xl w-[440px] max-w-full overflow-hidden shadow-[0_30px_80px_-30px_rgba(4,6,20,0.9)]",
+    cardBox:
+      "bg-[#161B30] border border-[#2A3150] rounded-2xl w-[440px] max-w-full overflow-hidden shadow-[0_30px_80px_-30px_rgba(4,6,20,0.9)]",
     card: "!shadow-none !border-0 !bg-transparent !rounded-none",
     footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
     headerTitle: "text-[#F8FAFC] text-xl font-semibold tracking-tight",
@@ -84,8 +92,10 @@ const clerkAppearance = {
     alertText: "text-[#F8FAFC]",
     logoBox: "flex justify-center h-11",
     logoImage: "h-11 w-11",
-    socialButtonsBlockButton: "bg-[#1B2140] border border-[#2A3150] text-[#F8FAFC]",
-    formButtonPrimary: "bg-[#7568E8] text-[#F8FAFC] font-medium shadow-none normal-case",
+    socialButtonsBlockButton:
+      "bg-[#1B2140] border border-[#2A3150] text-[#F8FAFC]",
+    formButtonPrimary:
+      "bg-[#7568E8] text-[#F8FAFC] font-medium shadow-none normal-case",
     formFieldInput: "bg-[#0F1325] border border-[#2A3150] text-[#F8FAFC]",
     footerAction: "bg-[#131728] border-t border-[#232A47] py-4",
     dividerLine: "bg-[#2A3150]",
@@ -102,7 +112,8 @@ function AuthFrame({ children }: { children: ReactNode }) {
       <div className="grid-bg pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_70%)]" />
       <div className="relative">{children}</div>
       <p className="relative mt-6 max-w-sm text-center text-xs text-muted-foreground">
-        Creating an account gives you an identity only. To join an existing organization, an owner must authorize your email address.
+        Creating an account gives you an identity only. To join an existing
+        organization, an owner must authorize your email address.
       </p>
     </div>
   );
@@ -112,7 +123,11 @@ function SignInPage() {
   usePageMeta("Sign in", "Sign in to NextAura Security Center.");
   return (
     <AuthFrame>
-      <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+      <SignIn
+        routing="path"
+        path={`${basePath}/sign-in`}
+        signUpUrl={`${basePath}/sign-up`}
+      />
     </AuthFrame>
   );
 }
@@ -121,7 +136,11 @@ function SignUpPage() {
   usePageMeta("Create account", "Create a NextAura Security Center identity.");
   return (
     <AuthFrame>
-      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
+      <SignUp
+        routing="path"
+        path={`${basePath}/sign-up`}
+        signInUrl={`${basePath}/sign-in`}
+      />
     </AuthFrame>
   );
 }
@@ -134,7 +153,10 @@ function ClerkQueryClientCacheInvalidator() {
   useEffect(() => {
     const unsubscribe = addListener(({ user }) => {
       const userId = user?.id ?? null;
-      if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
+      if (
+        prevUserIdRef.current !== undefined &&
+        prevUserIdRef.current !== userId
+      ) {
         queryClient.clear();
       }
       prevUserIdRef.current = userId;
@@ -164,6 +186,7 @@ function Router() {
           <Route path="/devices/enroll" component={Enroll} />
           <Route path="/devices/:id" component={DeviceDetailPage} />
           <Route path="/findings" component={Findings} />
+          <Route path="/incidents" component={Incidents} />
           <Route path="/vulnerabilities" component={Vulnerabilities} />
           <Route path="/reports" component={Reports} />
           <Route path="/email-security" component={EmailSecurity} />
@@ -195,7 +218,8 @@ function ClerkProviderWithRoutes() {
         signUp: {
           start: {
             title: "Create your identity",
-            subtitle: "An owner must authorize you before you can join their organization.",
+            subtitle:
+              "An owner must authorize you before you can join their organization.",
           },
         },
       }}
