@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { Route, Switch, useLocation, Router as WouterRouter } from "wouter";
+import { ShieldAlert } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -35,10 +36,10 @@ const queryClient = new QueryClient({
 });
 
 // REQUIRED — copy verbatim.
-const clerkPubKey = publishableKeyFromHost(
-  window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-);
+const configuredClerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
+const clerkPubKey = configuredClerkKey
+  ? publishableKeyFromHost(window.location.hostname, configuredClerkKey)
+  : null;
 
 // REQUIRED — copy verbatim. Empty in dev, auto-set in prod.
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -49,10 +50,6 @@ function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
     ? path.slice(basePath.length) || "/"
     : path;
-}
-
-if (!clerkPubKey) {
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY in .env file");
 }
 
 const clerkAppearance = {
@@ -205,7 +202,7 @@ function ClerkProviderWithRoutes() {
 
   return (
     <ClerkProvider
-      publishableKey={clerkPubKey}
+      publishableKey={clerkPubKey ?? undefined}
       proxyUrl={clerkProxyUrl}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
@@ -240,10 +237,57 @@ function ClerkProviderWithRoutes() {
 }
 
 function App() {
+  if (!clerkPubKey) {
+    return <ConfigurationUnavailable />;
+  }
+
   return (
     <WouterRouter base={basePath}>
       <ClerkProviderWithRoutes />
     </WouterRouter>
+  );
+}
+
+function ConfigurationUnavailable() {
+  useEffect(() => {
+    document.title = "Preview configuration required | NextAura";
+  }, []);
+
+  return (
+    <main className="grid min-h-[100dvh] place-items-center bg-background px-5 py-12">
+      <section
+        aria-labelledby="configuration-title"
+        className="w-full max-w-xl rounded-2xl border border-warn/30 bg-card p-6 shadow-[0_24px_80px_-40px_rgba(0,0,0,0.8)] sm:p-8"
+      >
+        <div className="flex size-11 items-center justify-center rounded-xl border border-warn/30 bg-warn/10 text-warn">
+          <ShieldAlert className="size-5" aria-hidden="true" />
+        </div>
+        <p className="eyebrow mt-6">Vercel Preview</p>
+        <h1
+          id="configuration-title"
+          className="mt-2 text-2xl font-semibold tracking-tight text-foreground"
+        >
+          Staging authentication is not configured
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          This deployment intentionally keeps sign-in and organization data
+          unavailable until an administrator adds the staging Clerk public key
+          to the Preview environment and redeploys this exact branch.
+        </p>
+        <div className="mt-6 rounded-xl border border-border bg-background/70 p-4">
+          <p className="text-sm font-medium text-foreground">
+            Required public variable
+          </p>
+          <code className="mt-2 block break-all font-mono text-xs text-cyan">
+            VITE_CLERK_PUBLISHABLE_KEY
+          </code>
+        </div>
+        <p className="mt-5 text-xs leading-5 text-muted-foreground">
+          No production credentials are used automatically, and this state does
+          not represent a successful sign-in, enrollment, or endpoint scan.
+        </p>
+      </section>
+    </main>
   );
 }
 

@@ -42,7 +42,7 @@ jobs:
           version: 2.122.0
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
       - run: corepack enable
       - run: corepack pnpm install --frozen-lockfile
       - name: Start isolated local Supabase
